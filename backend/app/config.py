@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Admin
     admin_username: str = os.getenv("ADMIN_USERNAME", "admin")
     admin_password: str = os.getenv("ADMIN_PASSWORD", "admin123")
-    admin_email: str = os.getenv("ADMIN_EMAIL", "admin@copytrade.local")
+    admin_email: str = os.getenv("ADMIN_EMAIL", "admin@copytrade.app")
 
     @property
     def cors_origins_list(self) -> list[str]:

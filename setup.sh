@@ -169,7 +169,7 @@ VITE_API_URL=http://localhost:8000
 # Admin user credentials
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=${admin_password}
-ADMIN_EMAIL=admin@copytrade.local
+ADMIN_EMAIL=admin@copytrade.app
 EOF
 
     chmod 600 .env
@@ -235,9 +235,9 @@ main() {
     # Configura ambiente
     setup_env
 
-    # Para containers existentes
+    # Para containers existentes e remove volumes se .env foi recriado
     print_status "Parando containers existentes..."
-    $DOCKER_COMPOSE down 2>/dev/null || true
+    $DOCKER_COMPOSE down -v 2>/dev/null || true
 
     # Build e start dos containers
     print_status "Construindo e iniciando containers..."

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Edit, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
 import { format } from 'date-fns'
-import { StatusBadge } from '../common/StatusBadge'
 import type { Account, AccountStatus } from '../../types/account'
 
 interface AccountTableProps {
