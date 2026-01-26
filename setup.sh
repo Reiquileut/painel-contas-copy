@@ -128,6 +128,9 @@ generate_fernet_key() {
     fi
 }
 
+# Variavel global para controlar reset do banco
+RESET_DATABASE=false
+
 # Configura variaveis de ambiente
 setup_env() {
     if [ -f .env ]; then
@@ -135,6 +138,23 @@ setup_env() {
         read -r response
         if [[ ! "$response" =~ ^[Ss]$ ]]; then
             print_status "Mantendo .env existente"
+            return 0
+        fi
+        
+        # Se vai sobrescrever .env, precisa perguntar sobre o banco
+        echo ""
+        print_warning "ATENCAO: O .env sera recriado com novas credenciais do banco."
+        print_warning "Para o sistema funcionar, o banco de dados precisa ser resetado."
+        print_warning "Isso ira APAGAR todos os dados existentes!"
+        echo ""
+        echo -e "${RED}Deseja resetar o banco de dados? (sim/N)${NC}"
+        read -r reset_response
+        if [[ "$reset_response" == "sim" ]]; then
+            RESET_DATABASE=true
+            print_status "Banco de dados sera resetado."
+        else
+            print_error "Sem reset do banco, as novas credenciais nao funcionarao."
+            print_error "Mantendo .env existente para evitar problemas."
             return 0
         fi
     fi
@@ -235,9 +255,14 @@ main() {
     # Configura ambiente
     setup_env
 
-    # Para containers existentes e remove volumes se .env foi recriado
+    # Para containers existentes
     print_status "Parando containers existentes..."
-    $DOCKER_COMPOSE down -v 2>/dev/null || true
+    if [ "$RESET_DATABASE" = true ]; then
+        print_warning "Removendo volumes (banco de dados)..."
+        $DOCKER_COMPOSE down -v 2>/dev/null || true
+    else
+        $DOCKER_COMPOSE down 2>/dev/null || true
+    fi
 
     # Build e start dos containers
     print_status "Construindo e iniciando containers..."
