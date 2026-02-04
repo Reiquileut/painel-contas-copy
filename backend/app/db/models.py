@@ -58,6 +58,13 @@ class CopyTradeAccount(Base):
     copy_count = Column(Integer, default=0)
     max_copies = Column(Integer, default=1)
 
+    # Proprietary trading (Mesa Proprietaria)
+    margin_size = Column(Numeric(12, 2))
+    phase1_target = Column(Numeric(12, 2))
+    phase1_status = Column(String(20), default="not_started")
+    phase2_target = Column(Numeric(12, 2))
+    phase2_status = Column(String(20))  # null = sem fase 2
+
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
@@ -75,5 +82,13 @@ class CopyTradeAccount(Base):
         CheckConstraint(
             "status IN ('pending', 'approved', 'in_copy', 'expired', 'suspended')",
             name="valid_status"
+        ),
+        CheckConstraint(
+            "phase1_status IS NULL OR phase1_status IN ('not_started', 'in_progress', 'passed', 'failed')",
+            name="valid_phase1_status"
+        ),
+        CheckConstraint(
+            "phase2_status IS NULL OR phase2_status IN ('not_started', 'in_progress', 'passed', 'failed')",
+            name="valid_phase2_status"
         ),
     )

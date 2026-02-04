@@ -2,8 +2,10 @@ import client from './client'
 import type { Account, AccountCreate, AccountUpdate, Stats, AdminStats } from '../types/account'
 
 // Admin endpoints
-export async function getAccounts(status?: string): Promise<Account[]> {
-  const params = status ? { status } : {}
+export async function getAccounts(status?: string, search?: string): Promise<Account[]> {
+  const params: Record<string, string> = {}
+  if (status) params.status = status
+  if (search) params.search = search
   const response = await client.get<Account[]>('/api/admin/accounts', { params })
   return response.data
 }

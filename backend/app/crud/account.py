@@ -12,11 +12,14 @@ def get_accounts(
     db: Session,
     skip: int = 0,
     limit: int = 100,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    search: Optional[str] = None
 ) -> list[CopyTradeAccount]:
     query = db.query(CopyTradeAccount)
     if status:
         query = query.filter(CopyTradeAccount.status == status)
+    if search:
+        query = query.filter(CopyTradeAccount.buyer_name.ilike(f"%{search}%"))
     return query.offset(skip).limit(limit).all()
 
 
@@ -56,6 +59,11 @@ def create_account(
         purchase_price=account.purchase_price,
         status=account.status,
         max_copies=account.max_copies,
+        margin_size=account.margin_size,
+        phase1_target=account.phase1_target,
+        phase1_status=account.phase1_status,
+        phase2_target=account.phase2_target,
+        phase2_status=account.phase2_status,
         created_by=user_id
     )
     db.add(db_account)
@@ -181,6 +189,11 @@ def decrypt_account_for_response(account: CopyTradeAccount) -> dict:
         "status": account.status,
         "copy_count": account.copy_count,
         "max_copies": account.max_copies,
+        "margin_size": account.margin_size,
+        "phase1_target": account.phase1_target,
+        "phase1_status": account.phase1_status,
+        "phase2_target": account.phase2_target,
+        "phase2_status": account.phase2_status,
         "created_at": account.created_at,
         "updated_at": account.updated_at,
         "created_by": account.created_by

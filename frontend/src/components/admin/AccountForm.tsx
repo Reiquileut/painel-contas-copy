@@ -24,9 +24,15 @@ export function AccountForm({ account, onSubmit, onClose, isLoading }: AccountFo
       purchase_price: account.purchase_price || undefined,
       status: account.status,
       max_copies: account.max_copies,
+      margin_size: account.margin_size || undefined,
+      phase1_target: account.phase1_target || undefined,
+      phase1_status: account.phase1_status || 'not_started',
+      phase2_target: account.phase2_target || undefined,
+      phase2_status: account.phase2_status || undefined,
     } : {
       status: 'pending',
       max_copies: 1,
+      phase1_status: 'not_started',
     },
   })
 
@@ -50,7 +56,22 @@ export function AccountForm({ account, onSubmit, onClose, isLoading }: AccountFo
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit((data) => {
+          const cleaned = {
+            ...data,
+            buyer_email: data.buyer_email || undefined,
+            buyer_phone: data.buyer_phone || undefined,
+            buyer_notes: data.buyer_notes || undefined,
+            expiry_date: data.expiry_date || undefined,
+            purchase_price: Number.isNaN(data.purchase_price) ? undefined : data.purchase_price,
+            margin_size: Number.isNaN(data.margin_size) ? undefined : data.margin_size || undefined,
+            phase1_target: Number.isNaN(data.phase1_target) ? undefined : data.phase1_target || undefined,
+            phase1_status: data.phase1_status || 'not_started',
+            phase2_target: Number.isNaN(data.phase2_target) ? undefined : data.phase2_target || undefined,
+            phase2_status: data.phase2_status || undefined,
+          }
+          return onSubmit(cleaned)
+        })} className="p-6 space-y-6">
           {/* Dados da Conta */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
@@ -229,6 +250,79 @@ export function AccountForm({ account, onSubmit, onClose, isLoading }: AccountFo
                   min="1"
                   className="input mt-1"
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* Dados da Mesa Proprietaria */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              Dados da Mesa Proprietaria
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Margem (USD)
+                </label>
+                <input
+                  {...register('margin_size', { valueAsNumber: true })}
+                  type="number"
+                  step="0.01"
+                  className="input mt-1"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Meta Fase 1 (USD)
+                </label>
+                <input
+                  {...register('phase1_target', { valueAsNumber: true })}
+                  type="number"
+                  step="0.01"
+                  className="input mt-1"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Status Fase 1
+                </label>
+                <select {...register('phase1_status')} className="input mt-1">
+                  <option value="not_started">Nao Iniciada</option>
+                  <option value="in_progress">Em Andamento</option>
+                  <option value="passed">Aprovada</option>
+                  <option value="failed">Reprovada</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Meta Fase 2 (USD)
+                </label>
+                <input
+                  {...register('phase2_target', { valueAsNumber: true })}
+                  type="number"
+                  step="0.01"
+                  className="input mt-1"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Status Fase 2
+                </label>
+                <select {...register('phase2_status')} className="input mt-1">
+                  <option value="">Sem Fase 2</option>
+                  <option value="not_started">Nao Iniciada</option>
+                  <option value="in_progress">Em Andamento</option>
+                  <option value="passed">Aprovada</option>
+                  <option value="failed">Reprovada</option>
+                </select>
               </div>
             </div>
           </div>

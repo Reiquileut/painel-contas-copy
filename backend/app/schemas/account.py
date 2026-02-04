@@ -16,6 +16,11 @@ class AccountBase(BaseModel):
     purchase_price: Optional[Decimal] = None
     status: str = "pending"
     max_copies: int = 1
+    margin_size: Optional[Decimal] = None
+    phase1_target: Optional[Decimal] = None
+    phase1_status: Optional[str] = "not_started"
+    phase2_target: Optional[Decimal] = None
+    phase2_status: Optional[str] = None
 
 
 class AccountCreate(AccountBase):
@@ -36,6 +41,11 @@ class AccountUpdate(BaseModel):
     status: Optional[str] = None
     copy_count: Optional[int] = None
     max_copies: Optional[int] = None
+    margin_size: Optional[Decimal] = None
+    phase1_target: Optional[Decimal] = None
+    phase1_status: Optional[str] = None
+    phase2_target: Optional[Decimal] = None
+    phase2_status: Optional[str] = None
 
 
 class StatusUpdate(BaseModel):

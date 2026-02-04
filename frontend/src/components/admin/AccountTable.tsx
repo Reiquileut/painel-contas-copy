@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Edit, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
 import { format } from 'date-fns'
-import type { Account, AccountStatus } from '../../types/account'
+import type { Account, AccountStatus, PhaseStatus } from '../../types/account'
 
 interface AccountTableProps {
   accounts: Account[]
@@ -25,6 +25,26 @@ export function AccountTable({ accounts, onEdit, onDelete, onStatusChange }: Acc
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
+  }
+
+  const getPhaseLabel = (status: PhaseStatus | null | undefined): string => {
+    switch (status) {
+      case 'not_started': return 'Nao Iniciada'
+      case 'in_progress': return 'Em Andamento'
+      case 'passed': return 'Aprovada'
+      case 'failed': return 'Reprovada'
+      default: return '-'
+    }
+  }
+
+  const getPhaseColor = (status: PhaseStatus | null | undefined): string => {
+    switch (status) {
+      case 'not_started': return 'text-gray-500'
+      case 'in_progress': return 'text-blue-600'
+      case 'passed': return 'text-green-600'
+      case 'failed': return 'text-red-600'
+      default: return 'text-gray-400'
+    }
   }
 
   const statusOptions: AccountStatus[] = ['pending', 'approved', 'in_copy', 'expired', 'suspended']
@@ -62,6 +82,9 @@ export function AccountTable({ accounts, onEdit, onDelete, onStatusChange }: Acc
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
               Copies
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              Mesa Prop
             </th>
             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
               Acoes
@@ -150,6 +173,27 @@ export function AccountTable({ accounts, onEdit, onDelete, onStatusChange }: Acc
               <td className="px-4 py-4 whitespace-nowrap text-sm">
                 <span className="text-gray-900">{account.copy_count}</span>
                 <span className="text-gray-400"> / {account.max_copies}</span>
+              </td>
+              <td className="px-4 py-4 whitespace-nowrap text-sm">
+                {account.margin_size ? (
+                  <div className="space-y-1">
+                    <p className="font-medium text-gray-900">
+                      ${Number(account.margin_size).toLocaleString()}
+                    </p>
+                    <p className={getPhaseColor(account.phase1_status)}>
+                      F1: {getPhaseLabel(account.phase1_status)}
+                      {account.phase1_target && ` ($${Number(account.phase1_target).toLocaleString()})`}
+                    </p>
+                    {account.phase2_status && (
+                      <p className={getPhaseColor(account.phase2_status)}>
+                        F2: {getPhaseLabel(account.phase2_status)}
+                        {account.phase2_target && ` ($${Number(account.phase2_target).toLocaleString()})`}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-gray-400">-</span>
+                )}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-right">
                 <div className="flex items-center justify-end gap-2">

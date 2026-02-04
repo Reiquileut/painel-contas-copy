@@ -31,10 +31,11 @@ async def list_accounts(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     status: Optional[str] = None,
+    search: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    accounts = get_accounts(db, skip=skip, limit=limit, status=status)
+    accounts = get_accounts(db, skip=skip, limit=limit, status=status, search=search)
     return [decrypt_account_for_response(acc) for acc in accounts]
 
 

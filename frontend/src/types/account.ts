@@ -1,4 +1,5 @@
 export type AccountStatus = 'pending' | 'approved' | 'in_copy' | 'expired' | 'suspended'
+export type PhaseStatus = 'not_started' | 'in_progress' | 'passed' | 'failed'
 
 export interface Account {
   id: number
@@ -15,6 +16,11 @@ export interface Account {
   status: AccountStatus
   copy_count: number
   max_copies: number
+  margin_size: number | null
+  phase1_target: number | null
+  phase1_status: PhaseStatus | null
+  phase2_target: number | null
+  phase2_status: PhaseStatus | null
   created_at: string
   updated_at: string | null
   created_by: number | null
@@ -33,6 +39,11 @@ export interface AccountCreate {
   purchase_price?: number
   status?: AccountStatus
   max_copies?: number
+  margin_size?: number
+  phase1_target?: number
+  phase1_status?: PhaseStatus
+  phase2_target?: number
+  phase2_status?: PhaseStatus
 }
 
 export interface AccountUpdate extends Partial<AccountCreate> {

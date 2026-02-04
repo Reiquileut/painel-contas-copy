@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, DollarSign, Calendar, TrendingUp, Users } from 'lucide-react'
 import {
@@ -19,11 +19,18 @@ export function AdminDashboard() {
   const [showForm, setShowForm] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
   // Queries
   const { data: accounts, isLoading: loadingAccounts } = useQuery({
-    queryKey: ['accounts', statusFilter],
-    queryFn: () => getAccounts(statusFilter || undefined),
+    queryKey: ['accounts', statusFilter, debouncedSearch],
+    queryFn: () => getAccounts(statusFilter || undefined, debouncedSearch || undefined),
   })
 
   const { data: stats, isLoading: loadingStats } = useQuery({
@@ -39,6 +46,10 @@ export function AdminDashboard() {
       queryClient.invalidateQueries({ queryKey: ['adminStats'] })
       setShowForm(false)
     },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail || error?.message || 'Erro ao criar conta'
+      alert(typeof message === 'string' ? message : JSON.stringify(message))
+    },
   })
 
   const updateMutation = useMutation({
@@ -49,6 +60,10 @@ export function AdminDashboard() {
       queryClient.invalidateQueries({ queryKey: ['adminStats'] })
       setShowForm(false)
       setEditingAccount(null)
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail || error?.message || 'Erro ao atualizar conta'
+      alert(typeof message === 'string' ? message : JSON.stringify(message))
     },
   })
 
@@ -70,10 +85,14 @@ export function AdminDashboard() {
   })
 
   const handleSubmit = async (data: AccountCreate) => {
-    if (editingAccount) {
-      await updateMutation.mutateAsync({ id: editingAccount.id, data })
-    } else {
-      await createMutation.mutateAsync(data)
+    try {
+      if (editingAccount) {
+        await updateMutation.mutateAsync({ id: editingAccount.id, data })
+      } else {
+        await createMutation.mutateAsync(data)
+      }
+    } catch {
+      // Error is already handled by onError callbacks in mutations
     }
   }
 
@@ -174,20 +193,32 @@ export function AdminDashboard() {
 
       {/* Filter */}
       <div className="card mb-6">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700">Filtrar por status:</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input w-auto"
-          >
-            <option value="">Todos</option>
-            <option value="pending">Pendentes</option>
-            <option value="approved">Aprovadas</option>
-            <option value="in_copy">Em Copy</option>
-            <option value="expired">Expiradas</option>
-            <option value="suspended">Suspensas</option>
-          </select>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Filtrar por status:</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="input w-auto"
+            >
+              <option value="">Todos</option>
+              <option value="pending">Pendentes</option>
+              <option value="approved">Aprovadas</option>
+              <option value="in_copy">Em Copy</option>
+              <option value="expired">Expiradas</option>
+              <option value="suspended">Suspensas</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Buscar por nome:</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input w-auto"
+              placeholder="Nome do comprador..."
+            />
+          </div>
         </div>
       </div>
 
