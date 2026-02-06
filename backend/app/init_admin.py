@@ -34,5 +34,5 @@ def init_admin():
         db.close()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     init_admin()
