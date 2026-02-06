@@ -13,6 +13,12 @@ from app.api.public import router as public_router
 from app.services.security_store import is_redis_available
 
 settings = get_settings()
+BASE_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+}
 
 app = FastAPI(
     title="Copy Trade Dashboard API",
@@ -66,6 +72,21 @@ async def v1_deprecation_middleware(request: Request, call_next):
     if is_v1_path:
         response.headers["Deprecation"] = "true"
         response.headers["Sunset"] = settings.v1_sunset_http
+    return response
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    for header_name, header_value in BASE_SECURITY_HEADERS.items():
+        response.headers.setdefault(header_name, header_value)
+
+    if settings.cookie_secure:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains"
+        )
+
     return response
 
 

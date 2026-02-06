@@ -8,10 +8,9 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 import app.main as main_module
-from app.api import accounts_v2 as accounts_v2_module
-from app.api import auth_v2 as auth_v2_module
 from app.config import Settings, get_settings
 from app.core.dependencies import get_current_user_v2, require_csrf
+from app.core import request_meta as request_meta_module
 from app.core.security import create_access_token
 from app.crud import user as user_crud
 from app.schemas.user import UserCreate
@@ -323,8 +322,13 @@ def test_security_store_redis_and_production_branches(monkeypatch):
 
 def test_request_ip_helpers_cover_forwarded_and_client_scope():
     forwarded = _make_request("GET", headers={"X-Forwarded-For": "198.51.100.1, 203.0.113.1"})
-    assert accounts_v2_module._request_ip(forwarded) == "198.51.100.1"
-    assert auth_v2_module._request_ip(forwarded) == "198.51.100.1"
+    assert request_meta_module.get_request_ip(forwarded) is None
+
+    request_meta_module.settings.trust_x_forwarded_for = True
+    assert request_meta_module.get_request_ip(forwarded) == "198.51.100.1"
+    blank_forwarded = _make_request("GET", headers={"X-Forwarded-For": "   "})
+    assert request_meta_module.get_request_ip(blank_forwarded) is None
+    request_meta_module.settings.trust_x_forwarded_for = False
 
     client_scope = Request(
         {
@@ -334,8 +338,10 @@ def test_request_ip_helpers_cover_forwarded_and_client_scope():
             "client": ("127.0.0.1", 1234),
         }
     )
-    assert accounts_v2_module._request_ip(client_scope) == "127.0.0.1"
-    assert auth_v2_module._request_ip(client_scope) == "127.0.0.1"
+    assert request_meta_module.get_request_ip(client_scope) == "127.0.0.1"
+    assert request_meta_module.get_request_user_agent(
+        _make_request("GET", headers={"User-Agent": "pytest-agent"})
+    ) == "pytest-agent"
 
 
 def test_session_service_create_rotate_and_revoke(db_session):
@@ -438,6 +444,37 @@ def test_main_deprecation_headers_and_sunset_guard(client, db_session, monkeypat
     gone = client.post("/api/auth/login", json={"username": "x", "password": "y"})
     assert gone.status_code == 410
     assert gone.json()["detail"] == "API v1 descontinuada. Use /api/v2."
+
+
+def test_main_security_headers_and_auth_no_store(client, db_session, monkeypatch):
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert health.headers.get("X-Content-Type-Options") == "nosniff"
+    assert health.headers.get("X-Frame-Options") == "DENY"
+    assert health.headers.get("Referrer-Policy") == "no-referrer"
+    assert "geolocation=()" in (health.headers.get("Permissions-Policy") or "")
+
+    monkeypatch.setattr(main_module.settings, "app_env", "production")
+    hsts = client.get("/api/health")
+    assert "max-age=31536000" in (hsts.headers.get("Strict-Transport-Security") or "")
+    monkeypatch.setattr(main_module.settings, "app_env", "test")
+
+    user_crud.create_user(
+        db_session,
+        UserCreate(
+            username="security-header-user",
+            email="security-header-user@example.com",
+            password="strong-password",
+            is_admin=True
+        )
+    )
+    login = client.post(
+        "/api/v2/auth/login",
+        json={"username": "security-header-user", "password": "strong-password"}
+    )
+    assert login.status_code == 200
+    assert login.headers.get("Cache-Control") == "no-store"
+    assert login.headers.get("Pragma") == "no-cache"
 
 
 def test_startup_security_checks_production_requires_redis(monkeypatch):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.user import Token, LoginRequest, UserResponse
@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/login", response_model=Token)
 async def login(
     login_data: LoginRequest,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     user = authenticate_user(db, login_data.username, login_data.password)
@@ -24,6 +25,8 @@ async def login(
         )
 
     access_token = create_access_token(data={"sub": user.username})
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return Token(access_token=access_token)
 
 

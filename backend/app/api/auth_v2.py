@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.dependencies import get_current_user_v2, require_csrf
+from app.core.request_meta import get_request_ip, get_request_user_agent
 from app.crud.user import authenticate_user
 from app.db.database import get_db
 from app.db.models import User
@@ -17,19 +16,6 @@ from app.services.session import create_session_tokens, revoke_refresh_session, 
 
 router = APIRouter(prefix="/api/v2/auth", tags=["auth-v2"])
 settings = get_settings()
-
-
-def _request_ip(request: Request) -> Optional[str]:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return None
-
-
-def _request_agent(request: Request) -> Optional[str]:
-    return request.headers.get("user-agent")
 
 
 def _set_session_cookies(response: Response, *, access_token: str, refresh_token: str, csrf_token: str) -> None:
@@ -68,6 +54,11 @@ def _clear_session_cookies(response: Response) -> None:
     response.delete_cookie(key=settings.session_cookie_name_csrf, path="/")
 
 
+def _set_no_store_headers(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
 @router.post("/login", response_model=SessionLoginResponse)
 async def login_v2(
     login_data: LoginRequest,
@@ -75,8 +66,8 @@ async def login_v2(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    ip = _request_ip(request) or "unknown"
-    user_agent = _request_agent(request)
+    ip = get_request_ip(request) or "unknown"
+    user_agent = get_request_user_agent(request)
 
     try:
         enforce_rate_limit("login_ip", ip, limit=5, window_seconds=60)
@@ -128,6 +119,7 @@ async def login_v2(
         refresh_token=session_bundle.refresh_token,
         csrf_token=session_bundle.csrf_token
     )
+    _set_no_store_headers(response)
     log_security_event(
         db,
         action="auth_login",
@@ -150,8 +142,8 @@ async def refresh_v2(
 ):
     refresh_token = request.cookies.get(settings.session_cookie_name_refresh)
     csrf_token = request.cookies.get(settings.session_cookie_name_csrf)
-    ip = _request_ip(request)
-    user_agent = _request_agent(request)
+    ip = get_request_ip(request)
+    user_agent = get_request_user_agent(request)
 
     if not refresh_token or not csrf_token:
         raise HTTPException(
@@ -204,12 +196,17 @@ async def refresh_v2(
         refresh_token=rotated.refresh_token,
         csrf_token=rotated.csrf_token
     )
+    _set_no_store_headers(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
 
 @router.get("/me", response_model=UserResponse)
-async def me_v2(current_user: User = Depends(get_current_user_v2)):
+async def me_v2(
+    response: Response,
+    current_user: User = Depends(get_current_user_v2)
+):
+    _set_no_store_headers(response)
     return current_user
 
 
@@ -225,12 +222,13 @@ async def logout_v2(
     current_user: User = Depends(get_current_user_v2)
 ):
     refresh_token = request.cookies.get(settings.session_cookie_name_refresh)
-    ip = _request_ip(request)
-    user_agent = _request_agent(request)
+    ip = get_request_ip(request)
+    user_agent = get_request_user_agent(request)
     if refresh_token:
         revoke_refresh_session(db, refresh_token)
 
     _clear_session_cookies(response)
+    _set_no_store_headers(response)
     log_security_event(
         db,
         action="auth_logout",

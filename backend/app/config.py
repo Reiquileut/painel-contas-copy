@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # Redis (rate limit / distributed session state)
     redis_url: str = ""
+    trust_x_forwarded_for: bool = False
 
     # Admin
     admin_username: str = "admin"

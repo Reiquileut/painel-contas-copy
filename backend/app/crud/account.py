@@ -230,7 +230,7 @@ def build_account_response(
     if include_password:
         data["account_password"] = decrypt_account_password(account.account_password)
     elif mask_password:
-        data["account_password"] = "********"
+        data["account_password"] = "********"  # nosec
     return data
 
 

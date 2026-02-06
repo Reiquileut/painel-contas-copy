@@ -9,6 +9,7 @@ Este documento deixa o deploy em EasyPanel **decision-complete** para o estado a
 - Postgres para persistencia
 - Frontend React servido por Nginx
 - Hardening ativo (docs/openapi desativados em producao, CORS explicito, fail-fast de secrets)
+- Dependencias de auth/hardening atualizadas (FastAPI `0.128.2`, Starlette `0.49.3`, PyJWT `2.11.0`)
 
 ---
 
@@ -114,6 +115,7 @@ Sem Redis acessivel o backend em `APP_ENV=production` **nao sobe**.
 APP_ENV=production
 DATABASE_URL=postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade
 REDIS_URL=redis://copytrade-redis:6379/0
+TRUST_X_FORWARDED_FOR=true
 
 JWT_SECRET_KEY=GERAR_VALOR_FORTE
 JWT_ALGORITHM=HS256
@@ -138,6 +140,7 @@ Notas importantes:
 
 - `APP_ENV=production` e obrigatorio para comportamento seguro de cookies.
 - `CORS_ORIGINS` nao pode ter `*` em producao.
+- `TRUST_X_FORWARDED_FOR=true` somente atras de proxy confiavel (EasyPanel/Nginx/Cloudflare).
 - `ADMIN_PASSWORD` com menos de 12 caracteres bloqueia startup.
 - `ENCRYPTION_KEY` precisa ser Fernet valida.
 - O container ja roda `alembic upgrade head` no startup.
@@ -205,6 +208,21 @@ openssl rand -base64 24
 3. Deploy `backend`
 4. Deploy `frontend`
 
+### Processo operacional recomendado (release)
+
+1. Antes do deploy, validar localmente:
+
+```bash
+python3 -m pytest -q
+npm --prefix frontend run test
+npm --prefix frontend run build
+python3 -m pip_audit -r backend/requirements.txt
+python3 -m bandit -q -r backend/app
+```
+
+2. Fazer deploy na ordem acima.
+3. Executar checklist de validacao pos-deploy.
+
 ---
 
 ## 9. Checklist de validacao pos-deploy
@@ -241,6 +259,19 @@ Esperado: `200`.
 
 5. Operacoes mutaveis com CSRF:
    - Sem header `X-CSRF-Token` deve falhar com `403`.
+
+6. Headers de seguranca da API:
+
+```bash
+curl -I https://api.copytrade.seudominio.com/api/health
+```
+
+Esperado conter:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: no-referrer`
+- `Permissions-Policy` com `geolocation=()`
+- `Strict-Transport-Security` (em HTTPS/producao)
 
 ---
 
@@ -313,8 +344,15 @@ Se houver mais de um ambiente/instancia, adicione stack de logs centralizados pa
 ### Atualizar
 
 1. Push no repositorio.
-2. Deploy de `backend`.
-3. Deploy de `frontend` (se houve mudanca no frontend).
+2. Rodar validacoes locais (testes + build + auditorias) conforme secao 8.
+3. Deploy de `backend`.
+4. Deploy de `frontend` (se houve mudanca no frontend).
+5. Executar smoke test rapido:
+
+```bash
+curl -i https://api.copytrade.seudominio.com/api/health
+curl -I https://copytrade.seudominio.com
+```
 
 ### Rollback
 
@@ -329,6 +367,8 @@ Se houver mais de um ambiente/instancia, adicione stack de logs centralizados pa
 - Restrinja acesso administrativo do EasyPanel.
 - Rotacione `JWT_SECRET_KEY`, `ENCRYPTION_KEY` e senhas periodicamente.
 - Mantenha backups testados (restore validado).
+- Revisar dependencias com `pip-audit` e `npm audit` antes de cada release.
+- A API foi padronizada para JWT via `PyJWT`; manter `python-jose` fora da stack.
 
 ---
 
@@ -366,6 +406,16 @@ curl -i http://localhost:8000/api/health
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8000`
 - Health: `http://localhost:8000/api/health`
+
+5. Validar headers de seguranca localmente:
+
+```bash
+curl -I http://localhost:8000/api/health
+```
+
+Nota:
+- `TRUST_X_FORWARDED_FOR=false` por padrao em ambiente local (`docker-compose.yml`).
+- Em EasyPanel/producao, manter `TRUST_X_FORWARDED_FOR=true` apenas atras de proxy confiavel.
 
 ### Logs uteis
 

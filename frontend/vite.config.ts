@@ -1,12 +1,63 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import obfuscatorPlugin from 'vite-plugin-javascript-obfuscator'
+
+const obfuscationOptions = {
+  compact: true,
+  controlFlowFlattening: true,
+  controlFlowFlatteningThreshold: 0.75,
+  deadCodeInjection: true,
+  deadCodeInjectionThreshold: 0.2,
+  disableConsoleOutput: true,
+  identifierNamesGenerator: 'hexadecimal',
+  selfDefending: true,
+  simplify: true,
+  splitStrings: true,
+  splitStringsChunkLength: 6,
+  stringArray: true,
+  stringArrayEncoding: ['base64'],
+  stringArrayRotate: true,
+  stringArrayShuffle: true,
+  stringArrayThreshold: 1,
+  stringArrayWrappersCount: 2,
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    obfuscatorPlugin({
+      apply: 'build',
+      options: obfuscationOptions,
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+    },
+  },
+  build: {
+    sourcemap: false,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        passes: 2,
+        drop_console: true,
+        drop_debugger: true,
+      },
+      mangle: {
+        toplevel: true,
+      },
+      format: {
+        comments: false,
+      },
+    },
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]',
+      },
     },
   },
   server: {

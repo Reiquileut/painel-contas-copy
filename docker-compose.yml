@@ -41,6 +41,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgresql://${DB_USER:-copytrade}:${DB_PASSWORD}@db:5432/copytrade
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TRUST_X_FORWARDED_FOR: ${TRUST_X_FORWARDED_FOR:-false}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}

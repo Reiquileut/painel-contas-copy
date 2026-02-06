@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.dependencies import require_admin_v2, require_csrf
+from app.core.request_meta import get_request_ip, get_request_user_agent
 from app.core.security import verify_password
 from app.crud.account import (
     build_account_response_v2,
@@ -37,19 +38,6 @@ from app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/v2/admin", tags=["admin-v2"])
 settings = get_settings()
-
-
-def _request_ip(request: Request) -> Optional[str]:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return None
-
-
-def _request_agent(request: Request) -> Optional[str]:
-    return request.headers.get("user-agent")
 
 
 @router.get("/accounts", response_model=list[AccountAdminV2Response])
@@ -198,11 +186,12 @@ async def reveal_account_password_v2(
     account_id: int,
     reveal_data: PasswordRevealRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin_v2)
 ):
-    ip = _request_ip(request)
-    user_agent = _request_agent(request)
+    ip = get_request_ip(request)
+    user_agent = get_request_user_agent(request)
     try:
         enforce_rate_limit(
             namespace="reveal_user",
@@ -259,6 +248,8 @@ async def reveal_account_password_v2(
         ip=ip,
         user_agent=user_agent
     )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return PasswordRevealResponse(
         account_password=password,
         revealed_at=datetime.now(timezone.utc),
@@ -292,7 +283,7 @@ async def rotate_account_password_v2(
         user_id=current_user.id,
         target_type="copy_trade_account",
         target_id=str(account_id),
-        ip=_request_ip(request),
-        user_agent=_request_agent(request)
+        ip=get_request_ip(request),
+        user_agent=get_request_user_agent(request)
     )
     return build_account_response_v2(account)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -9,14 +11,20 @@ from app.core.security import decode_token
 from app.config import get_settings
 from app.services.session import is_access_session_revoked
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 settings = get_settings()
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nao autenticado",
+        )
+
     token = credentials.credentials
     payload = decode_token(token)
     return _user_from_payload(payload, db)

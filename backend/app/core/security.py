@@ -3,7 +3,8 @@ import hashlib
 import secrets
 from typing import Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from passlib.context import CryptContext
 from cryptography.fernet import Fernet
 from app.config import get_settings
@@ -51,7 +52,7 @@ def decode_token(token: str) -> Optional[dict]:
             algorithms=[settings.jwt_algorithm]
         )
         return payload
-    except JWTError:
+    except InvalidTokenError:
         return None
 
 
