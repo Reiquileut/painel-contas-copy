@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date
