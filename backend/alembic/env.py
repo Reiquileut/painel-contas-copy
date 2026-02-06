@@ -12,7 +12,7 @@ config = context.config
 # Set sqlalchemy.url from environment
 database_url = os.getenv(
     "DATABASE_URL",
-    "postgresql://copytrade:password@localhost:5432/copytrade"
+    "sqlite:///./copytrade.db"
 )
 config.set_main_option("sqlalchemy.url", database_url)
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from datetime import datetime
 from typing import Optional
 
@@ -19,8 +19,7 @@ class UserResponse(UserBase):
     is_admin: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
@@ -30,8 +29,18 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class SessionLoginResponse(BaseModel):
+    user: UserResponse
+    session_expires_at: datetime
+
+
+class MessageResponse(BaseModel):
+    message: str

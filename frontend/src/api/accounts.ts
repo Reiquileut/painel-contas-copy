@@ -1,41 +1,70 @@
 import client from './client'
-import type { Account, AccountCreate, AccountUpdate, Stats, AdminStats } from '../types/account'
+import type {
+  Account,
+  AccountCreate,
+  AccountUpdate,
+  AdminStats,
+  PasswordRevealResponse,
+  Stats,
+} from '../types/account'
 
 // Admin endpoints
 export async function getAccounts(status?: string, search?: string): Promise<Account[]> {
   const params: Record<string, string> = {}
   if (status) params.status = status
   if (search) params.search = search
-  const response = await client.get<Account[]>('/api/admin/accounts', { params })
+  const response = await client.get<Account[]>('/api/v2/admin/accounts', { params })
   return response.data
 }
 
 export async function getAccount(id: number): Promise<Account> {
-  const response = await client.get<Account>(`/api/admin/accounts/${id}`)
+  const response = await client.get<Account>(`/api/v2/admin/accounts/${id}`)
   return response.data
 }
 
 export async function createAccount(data: AccountCreate): Promise<Account> {
-  const response = await client.post<Account>('/api/admin/accounts', data)
+  const response = await client.post<Account>('/api/v2/admin/accounts', data)
   return response.data
 }
 
 export async function updateAccount(id: number, data: AccountUpdate): Promise<Account> {
-  const response = await client.put<Account>(`/api/admin/accounts/${id}`, data)
+  const response = await client.put<Account>(`/api/v2/admin/accounts/${id}`, data)
   return response.data
 }
 
 export async function updateAccountStatus(id: number, status: string): Promise<Account> {
-  const response = await client.patch<Account>(`/api/admin/accounts/${id}/status`, { status })
+  const response = await client.patch<Account>(`/api/v2/admin/accounts/${id}/status`, { status })
   return response.data
 }
 
 export async function deleteAccount(id: number): Promise<void> {
-  await client.delete(`/api/admin/accounts/${id}`)
+  await client.delete(`/api/v2/admin/accounts/${id}`)
 }
 
 export async function getAdminStats(): Promise<AdminStats> {
-  const response = await client.get<AdminStats>('/api/admin/stats')
+  const response = await client.get<AdminStats>('/api/v2/admin/stats')
+  return response.data
+}
+
+export async function revealAccountPassword(
+  id: number,
+  adminPassword: string
+): Promise<PasswordRevealResponse> {
+  const response = await client.post<PasswordRevealResponse>(
+    `/api/v2/admin/accounts/${id}/password/reveal`,
+    { admin_password: adminPassword }
+  )
+  return response.data
+}
+
+export async function rotateAccountPassword(
+  id: number,
+  newPassword: string
+): Promise<Account> {
+  const response = await client.post<Account>(
+    `/api/v2/admin/accounts/${id}/password/rotate`,
+    { new_password: newPassword }
+  )
   return response.data
 }
 

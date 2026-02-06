@@ -3,10 +3,10 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date
-from typing import Optional
+from typing import Optional, Any
 from decimal import Decimal
 from app.db.models import CopyTradeAccount
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCreate, AccountUpdate, AccountUpdateV2
 from app.core.security import encrypt_account_password, decrypt_account_password
 
 
@@ -77,7 +77,7 @@ def create_account(
 def update_account(
     db: Session,
     account_id: int,
-    account_update: AccountUpdate
+    account_update: AccountUpdate | AccountUpdateV2
 ) -> CopyTradeAccount | None:
     db_account = get_account(db, account_id)
     if not db_account:
@@ -175,11 +175,38 @@ def get_admin_stats(db: Session) -> dict:
 
 
 def decrypt_account_for_response(account: CopyTradeAccount) -> dict:
-    """Convert account to dict with decrypted password for admin view"""
-    return {
+    """Legacy helper retained for compatibility tests."""
+    return build_account_response(account, include_password=True)
+
+
+def reveal_account_password(account: CopyTradeAccount) -> str:
+    return decrypt_account_password(account.account_password)
+
+
+def rotate_account_password(
+    db: Session,
+    account_id: int,
+    new_password: str
+) -> CopyTradeAccount | None:
+    db_account = get_account(db, account_id)
+    if not db_account:
+        return None
+
+    db_account.account_password = encrypt_account_password(new_password)
+    db.commit()
+    db.refresh(db_account)
+    return db_account
+
+
+def build_account_response(
+    account: CopyTradeAccount,
+    *,
+    include_password: bool = False,
+    mask_password: bool = False
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
         "id": account.id,
         "account_number": account.account_number,
-        "account_password": decrypt_account_password(account.account_password),
         "server": account.server,
         "buyer_name": account.buyer_name,
         "buyer_email": account.buyer_email,
@@ -200,3 +227,16 @@ def decrypt_account_for_response(account: CopyTradeAccount) -> dict:
         "updated_at": account.updated_at,
         "created_by": account.created_by
     }
+    if include_password:
+        data["account_password"] = decrypt_account_password(account.account_password)
+    elif mask_password:
+        data["account_password"] = "********"
+    return data
+
+
+def build_account_response_v1(account: CopyTradeAccount) -> dict[str, Any]:
+    return build_account_response(account, mask_password=True)
+
+
+def build_account_response_v2(account: CopyTradeAccount) -> dict[str, Any]:
+    return build_account_response(account)

@@ -6,10 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from './AuthContext'
 import { mockUser } from '../test/fixtures'
 
-const { navigateMock, loginApi, getCurrentUserApi } = vi.hoisted(() => ({
+const { navigateMock, loginApi, getCurrentUserApi, refreshApi, logoutApi } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   loginApi: vi.fn(),
   getCurrentUserApi: vi.fn(),
+  refreshApi: vi.fn(),
+  logoutApi: vi.fn(),
 }))
 
 vi.mock('react-router-dom', async () => {
@@ -20,6 +22,8 @@ vi.mock('react-router-dom', async () => {
 vi.mock('../api/auth', () => ({
   login: loginApi,
   getCurrentUser: getCurrentUserApi,
+  refresh: refreshApi,
+  logout: logoutApi,
 }))
 
 function Consumer() {
@@ -48,7 +52,7 @@ function renderProvider() {
 describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    localStorage.clear()
+    vi.useRealTimers()
   })
 
   it('throws when useAuth is used outside provider', () => {
@@ -59,51 +63,78 @@ describe('AuthContext', () => {
     expect(() => render(<Broken />)).toThrow('useAuth must be used within an AuthProvider')
   })
 
-  it('loads with no token', async () => {
+  it('loads unauthenticated when bootstrap fails', async () => {
+    refreshApi.mockRejectedValueOnce(new Error('no refresh'))
+    getCurrentUserApi.mockRejectedValueOnce(new Error('no session'))
     renderProvider()
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'))
     expect(screen.getByTestId('auth')).toHaveTextContent('false')
-    expect(getCurrentUserApi).not.toHaveBeenCalled()
+    expect(refreshApi).toHaveBeenCalled()
+    expect(getCurrentUserApi).toHaveBeenCalled()
   })
 
-  it('loads authenticated user when token exists', async () => {
-    localStorage.setItem('token', 'tkn')
+  it('loads authenticated user and refreshes periodically', async () => {
+    let intervalCallback: (() => void) | undefined
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(((cb: any) => {
+      intervalCallback = cb
+      return 1 as any
+    }) as any)
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => {})
+
+    refreshApi.mockResolvedValue(undefined)
     getCurrentUserApi.mockResolvedValueOnce(mockUser)
     renderProvider()
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'))
     expect(screen.getByTestId('auth')).toHaveTextContent('true')
     expect(screen.getByTestId('username')).toHaveTextContent('admin')
+
+    expect(setIntervalSpy).toHaveBeenCalled()
+    intervalCallback?.()
+    await waitFor(() => expect(refreshApi).toHaveBeenCalledTimes(2))
+    clearIntervalSpy.mockRestore()
+    setIntervalSpy.mockRestore()
   })
 
-  it('removes token when bootstrap getCurrentUser fails', async () => {
-    localStorage.setItem('token', 'bad')
-    getCurrentUserApi.mockRejectedValueOnce(new Error('bad token'))
-    renderProvider()
-    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'))
-    expect(localStorage.getItem('token')).toBeNull()
-    expect(screen.getByTestId('auth')).toHaveTextContent('false')
-  })
+  it('clears user when periodic refresh fails', async () => {
+    let intervalCallback: (() => void) | undefined
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(((cb: any) => {
+      intervalCallback = cb
+      return 1 as any
+    }) as any)
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => {})
 
-  it('login stores token, sets user and navigates', async () => {
-    loginApi.mockResolvedValueOnce({ access_token: 'new-token' })
+    refreshApi.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('expired'))
     getCurrentUserApi.mockResolvedValueOnce(mockUser)
+    renderProvider()
+    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('true'))
+    intervalCallback?.()
+    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('false'))
+    expect(navigateMock).toHaveBeenCalledWith('/login')
+    clearIntervalSpy.mockRestore()
+    setIntervalSpy.mockRestore()
+  })
+
+  it('login sets user and navigates', async () => {
+    refreshApi.mockResolvedValueOnce(undefined)
+    getCurrentUserApi.mockRejectedValueOnce(new Error('no session'))
+    loginApi.mockResolvedValueOnce({ user: mockUser, session_expires_at: '2026-01-01T00:00:00Z' })
     const user = userEvent.setup()
     renderProvider()
     await user.click(screen.getByText('login'))
     await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('true'))
-    expect(localStorage.getItem('token')).toBe('new-token')
     expect(navigateMock).toHaveBeenCalledWith('/admin')
   })
 
   it('logout clears user and navigates login', async () => {
-    localStorage.setItem('token', 'tkn')
+    refreshApi.mockResolvedValueOnce(undefined)
     getCurrentUserApi.mockResolvedValueOnce(mockUser)
+    logoutApi.mockResolvedValueOnce(undefined)
     const user = userEvent.setup()
     renderProvider()
     await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('true'))
     await user.click(screen.getByText('logout'))
-    expect(localStorage.getItem('token')).toBeNull()
-    expect(screen.getByTestId('auth')).toHaveTextContent('false')
+    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('false'))
+    expect(logoutApi).toHaveBeenCalled()
     expect(navigateMock).toHaveBeenCalledWith('/login')
   })
 })

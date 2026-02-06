@@ -11,6 +11,8 @@ const updateAccountApi = vi.fn()
 const updateAccountStatusApi = vi.fn()
 const deleteAccountApi = vi.fn()
 const getAdminStatsApi = vi.fn()
+const revealAccountPasswordApi = vi.fn()
+const rotateAccountPasswordApi = vi.fn()
 
 const invalidateQueries = vi.fn()
 const useQueryMock = vi.fn()
@@ -38,15 +40,19 @@ vi.mock('../api/accounts', () => ({
   updateAccountStatus: (...args: any[]) => updateAccountStatusApi(...args),
   deleteAccount: (...args: any[]) => deleteAccountApi(...args),
   getAdminStats: (...args: any[]) => getAdminStatsApi(...args),
+  revealAccountPassword: (...args: any[]) => revealAccountPasswordApi(...args),
+  rotateAccountPassword: (...args: any[]) => rotateAccountPasswordApi(...args),
 }))
 
 vi.mock('../components/common/Loading', () => ({ Loading: () => <div>LoadingMock</div> }))
 vi.mock('../components/admin/AccountTable', () => ({
-  AccountTable: ({ onEdit, onDelete, onStatusChange }: any) => (
+  AccountTable: ({ onEdit, onDelete, onStatusChange, onRevealPassword, onRotatePassword }: any) => (
     <div>
       <button onClick={() => onEdit(mockAccount)}>edit</button>
       <button onClick={() => onDelete(99)}>delete</button>
       <button onClick={() => onStatusChange(77, 'approved')}>status</button>
+      <button onClick={() => onRevealPassword(55, 'admin-pass')}>reveal</button>
+      <button onClick={() => onRotatePassword(66, 'new-pass')}>rotate</button>
     </div>
   ),
 }))
@@ -79,6 +85,8 @@ describe('AdminDashboard', () => {
     updateAccountApi.mockResolvedValue({})
     updateAccountStatusApi.mockResolvedValue({})
     deleteAccountApi.mockResolvedValue({})
+    revealAccountPasswordApi.mockResolvedValue({})
+    rotateAccountPasswordApi.mockResolvedValue({})
     const createMutationObj = {
       isPending: false,
       mutateAsync: vi.fn(async () => {
@@ -97,9 +105,18 @@ describe('AdminDashboard', () => {
     }
     const statusMutationObj = { mutate: vi.fn() }
     const deleteMutationObj = { mutate: vi.fn() }
-    const ordered = [createMutationObj, updateMutationObj, statusMutationObj, deleteMutationObj]
+    const revealMutationObj = { mutateAsync: vi.fn(async () => {}) }
+    const rotateMutationObj = { mutateAsync: vi.fn(async () => {}) }
+    const ordered = [
+      createMutationObj,
+      updateMutationObj,
+      statusMutationObj,
+      deleteMutationObj,
+      revealMutationObj,
+      rotateMutationObj,
+    ]
     useMutationMock.mockImplementation(() => {
-      const idx = call % 4
+      const idx = call % 6
       call += 1
       return ordered[idx]
     })
@@ -135,6 +152,8 @@ describe('AdminDashboard', () => {
 
     await user.click(screen.getByText('status'))
     await user.click(screen.getByText('delete'))
+    await user.click(screen.getByText('reveal'))
+    await user.click(screen.getByText('rotate'))
 
     mutationOptions[0].onSuccess?.()
     mutationOptions[1].onSuccess?.()
@@ -142,6 +161,9 @@ describe('AdminDashboard', () => {
     await mutationOptions[2].mutationFn({ id: 2, status: 'approved' })
     mutationOptions[2].onSuccess?.()
     mutationOptions[3].onSuccess?.()
+    await mutationOptions[4].mutationFn({ id: 3, adminPassword: 'admin-pass' })
+    await mutationOptions[5].mutationFn({ id: 4, newPassword: 'new-pass' })
+    mutationOptions[5].onSuccess?.()
 
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalled())
 
@@ -159,5 +181,7 @@ describe('AdminDashboard', () => {
     expect(window.alert).toHaveBeenCalled()
     expect(updateAccountApi).toHaveBeenCalledWith(1, { buyer_name: 'x' })
     expect(updateAccountStatusApi).toHaveBeenCalledWith(2, 'approved')
+    expect(revealAccountPasswordApi).toHaveBeenCalledWith(3, 'admin-pass')
+    expect(rotateAccountPasswordApi).toHaveBeenCalledWith(4, 'new-pass')
   })
 })

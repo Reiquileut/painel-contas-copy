@@ -28,6 +28,8 @@ class User(Base):
         "CopyTradeAccount",
         back_populates="created_by_user"
     )
+    refresh_tokens = relationship("RefreshToken", back_populates="user")
+    security_logs = relationship("SecurityAuditLog", back_populates="user")
 
 
 class CopyTradeAccount(Base):
@@ -92,3 +94,38 @@ class CopyTradeAccount(Base):
             name="valid_phase2_status"
         ),
     )
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_id = Column(String(64), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    csrf_token = Column(String(128), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    created_ip = Column(String(64), nullable=True)
+    created_user_agent = Column(String(255), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="refresh_tokens")
+
+
+class SecurityAuditLog(Base):
+    __tablename__ = "security_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(64), nullable=False, index=True)
+    target_type = Column(String(64), nullable=True, index=True)
+    target_id = Column(String(64), nullable=True, index=True)
+    success = Column(Boolean, nullable=False, default=False, index=True)
+    reason = Column(Text, nullable=True)
+    ip = Column(String(64), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    user = relationship("User", back_populates="security_logs")

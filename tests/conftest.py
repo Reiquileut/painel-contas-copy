@@ -12,6 +12,13 @@ os.environ.setdefault(
     "ENCRYPTION_KEY",
     "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 )
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault(
+    "JWT_SECRET_KEY",
+    "test-jwt-secret-key-with-minimum-32-characters"
+)
+os.environ.setdefault("ADMIN_PASSWORD", "test-admin-password")
+os.environ.setdefault("V1_DEPRECATION_START", "2099-01-01T00:00:00+00:00")
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_PATH = ROOT / "backend"

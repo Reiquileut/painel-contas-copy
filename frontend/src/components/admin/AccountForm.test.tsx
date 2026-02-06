@@ -90,7 +90,7 @@ describe('AccountForm', () => {
     )
 
     expect(screen.getByText('Editar Conta')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('(manter atual)')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('(manter atual)')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Atualizar' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Cancelar' }))

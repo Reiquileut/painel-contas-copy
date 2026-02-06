@@ -19,7 +19,7 @@ from app.crud.account import (
     update_account_status,
     delete_account,
     get_admin_stats,
-    decrypt_account_for_response
+    build_account_response_v1
 )
 from app.core.dependencies import require_admin
 
@@ -36,7 +36,7 @@ async def list_accounts(
     current_user: User = Depends(require_admin)
 ):
     accounts = get_accounts(db, skip=skip, limit=limit, status=status, search=search)
-    return [decrypt_account_for_response(acc) for acc in accounts]
+    return [build_account_response_v1(acc) for acc in accounts]
 
 
 @router.get("/accounts/{account_id}", response_model=AccountAdminResponse)
@@ -51,7 +51,7 @@ async def get_account_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conta nao encontrada"
         )
-    return decrypt_account_for_response(account)
+    return build_account_response_v1(account)
 
 
 @router.post("/accounts", response_model=AccountAdminResponse, status_code=201)
@@ -69,7 +69,7 @@ async def create_new_account(
         )
 
     account = create_account(db, account_data, current_user.id)
-    return decrypt_account_for_response(account)
+    return build_account_response_v1(account)
 
 
 @router.put("/accounts/{account_id}", response_model=AccountAdminResponse)
@@ -94,7 +94,7 @@ async def update_existing_account(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conta nao encontrada"
         )
-    return decrypt_account_for_response(account)
+    return build_account_response_v1(account)
 
 
 @router.patch("/accounts/{account_id}/status", response_model=AccountAdminResponse)
@@ -117,7 +117,7 @@ async def update_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conta nao encontrada"
         )
-    return decrypt_account_for_response(account)
+    return build_account_response_v1(account)
 
 
 @router.delete("/accounts/{account_id}", status_code=204)

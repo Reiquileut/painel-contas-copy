@@ -13,7 +13,6 @@ export function AccountForm({ account, onSubmit, onClose, isLoading }: AccountFo
   const { register, handleSubmit, formState: { errors } } = useForm<AccountCreate>({
     defaultValues: account ? {
       account_number: account.account_number,
-      account_password: '',
       server: account.server,
       buyer_name: account.buyer_name,
       buyer_email: account.buyer_email || '',
@@ -93,22 +92,24 @@ export function AccountForm({ account, onSubmit, onClose, isLoading }: AccountFo
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Senha da Conta {!account && '*'}
-                </label>
-                <input
-                  {...register('account_password', {
-                    required: !account ? 'Obrigatorio' : false,
-                  })}
-                  type="password"
-                  className="input mt-1"
-                  placeholder={account ? '(manter atual)' : 'Senha'}
-                />
-                {errors.account_password && (
-                  <p className="mt-1 text-sm text-red-600">{errors.account_password.message}</p>
-                )}
-              </div>
+              {!account && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Senha da Conta *
+                  </label>
+                  <input
+                    {...register('account_password', {
+                      required: 'Obrigatorio',
+                    })}
+                    type="password"
+                    className="input mt-1"
+                    placeholder="Senha"
+                  />
+                  {errors.account_password && (
+                    <p className="mt-1 text-sm text-red-600">{errors.account_password.message}</p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">

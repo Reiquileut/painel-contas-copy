@@ -12,7 +12,7 @@ export interface LoginCredentials {
   password: string
 }
 
-export interface AuthToken {
-  access_token: string
-  token_type: string
+export interface SessionLoginResponse {
+  user: User
+  session_expires_at: string
 }

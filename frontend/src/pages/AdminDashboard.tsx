@@ -8,11 +8,13 @@ import {
   updateAccountStatus,
   deleteAccount,
   getAdminStats,
+  revealAccountPassword,
+  rotateAccountPassword,
 } from '../api/accounts'
 import { Loading } from '../components/common/Loading'
 import { AccountTable } from '../components/admin/AccountTable'
 import { AccountForm } from '../components/admin/AccountForm'
-import type { Account, AccountCreate, AccountStatus } from '../types/account'
+import type { Account, AccountCreate, AccountStatus, AccountUpdate } from '../types/account'
 
 export function AdminDashboard() {
   const queryClient = useQueryClient()
@@ -53,7 +55,7 @@ export function AdminDashboard() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: AccountCreate }) =>
+    mutationFn: ({ id, data }: { id: number; data: AccountUpdate }) =>
       updateAccount(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
@@ -84,10 +86,24 @@ export function AdminDashboard() {
     },
   })
 
+  const revealPasswordMutation = useMutation({
+    mutationFn: ({ id, adminPassword }: { id: number; adminPassword: string }) =>
+      revealAccountPassword(id, adminPassword),
+  })
+
+  const rotatePasswordMutation = useMutation({
+    mutationFn: ({ id, newPassword }: { id: number; newPassword: string }) =>
+      rotateAccountPassword(id, newPassword),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+    },
+  })
+
   const handleSubmit = async (data: AccountCreate) => {
     try {
       if (editingAccount) {
-        await updateMutation.mutateAsync({ id: editingAccount.id, data })
+        const { account_password, ...updateData } = data
+        await updateMutation.mutateAsync({ id: editingAccount.id, data: updateData })
       } else {
         await createMutation.mutateAsync(data)
       }
@@ -229,6 +245,12 @@ export function AdminDashboard() {
           onEdit={handleEdit}
           onDelete={handleDelete}
           onStatusChange={handleStatusChange}
+          onRevealPassword={(id, adminPassword) =>
+            revealPasswordMutation.mutateAsync({ id, adminPassword })
+          }
+          onRotatePassword={async (id, newPassword) => {
+            await rotatePasswordMutation.mutateAsync({ id, newPassword })
+          }}
         />
       </div>
 

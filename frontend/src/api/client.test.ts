@@ -20,8 +20,8 @@ describe('api/client', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    localStorage.clear()
     delete (window as any).__ENV__
+    document.cookie = 'ct_csrf=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
   })
 
   it('prefers API URL from window __ENV__', async () => {
@@ -32,14 +32,17 @@ describe('api/client', () => {
     )
   })
 
-  it('registers request/response interceptors and adds auth header', async () => {
-    localStorage.setItem('token', 'abc123')
+  it('registers request/response interceptors and adds csrf header on unsafe methods', async () => {
+    document.cookie = 'ct_csrf=csrf-token-value'
     await import('./client')
 
     expect(requestUse).toHaveBeenCalledTimes(1)
     const requestInterceptor = requestUse.mock.calls[0][0] as (cfg: any) => any
-    const cfg = requestInterceptor({ headers: {} })
-    expect(cfg.headers.Authorization).toBe('Bearer abc123')
+    const postConfig = requestInterceptor({ method: 'post', headers: {} })
+    expect(postConfig.headers['X-CSRF-Token']).toBe('csrf-token-value')
+
+    const getConfig = requestInterceptor({ method: 'get', headers: {} })
+    expect(getConfig.headers['X-CSRF-Token']).toBeUndefined()
 
     expect(responseUse).toHaveBeenCalledTimes(1)
     const onSuccess = responseUse.mock.calls[0][0] as (r: any) => any
@@ -47,15 +50,53 @@ describe('api/client', () => {
     expect(onSuccess({ ok: true })).toEqual({ ok: true })
 
     await expect(onError({ response: { status: 500 } })).rejects.toEqual({ response: { status: 500 } })
-    expect(localStorage.getItem('token')).toBe('abc123')
   })
 
-  it('clears token and redirects on 401', async () => {
-    localStorage.setItem('token', 'abc123')
+  it('redirects on 401 from protected endpoints when not on login page', async () => {
+    const originalLocation = window.location
+    delete (window as any).location
+    ;(window as any).location = { href: '/admin', pathname: '/admin' }
+
     await import('./client')
     const onError = responseUse.mock.calls[0][1] as (e: any) => Promise<any>
 
-    await expect(onError({ response: { status: 401 } })).rejects.toEqual({ response: { status: 401 } })
-    expect(localStorage.getItem('token')).toBeNull()
+    await expect(
+      onError({ response: { status: 401 }, config: { url: '/api/v2/admin/accounts' } })
+    ).rejects.toEqual({ response: { status: 401 }, config: { url: '/api/v2/admin/accounts' } })
+    expect((window as any).location.href).toBe('/login')
+
+    ;(window as any).location = originalLocation
+  })
+
+  it('does not redirect on 401 from auth endpoints', async () => {
+    const originalLocation = window.location
+    delete (window as any).location
+    ;(window as any).location = { href: '/', pathname: '/' }
+
+    await import('./client')
+    const onError = responseUse.mock.calls[0][1] as (e: any) => Promise<any>
+
+    await expect(
+      onError({ response: { status: 401 }, config: { url: '/api/v2/auth/me' } })
+    ).rejects.toEqual({ response: { status: 401 }, config: { url: '/api/v2/auth/me' } })
+    expect((window as any).location.href).toBe('/')
+
+    ;(window as any).location = originalLocation
+  })
+
+  it('does not redirect on 401 when already on login page', async () => {
+    const originalLocation = window.location
+    delete (window as any).location
+    ;(window as any).location = { href: '/login', pathname: '/login' }
+
+    await import('./client')
+    const onError = responseUse.mock.calls[0][1] as (e: any) => Promise<any>
+
+    await expect(
+      onError({ response: { status: 401 }, config: { url: '/api/v2/admin/accounts' } })
+    ).rejects.toEqual({ response: { status: 401 }, config: { url: '/api/v2/admin/accounts' } })
+    expect((window as any).location.href).toBe('/login')
+
+    ;(window as any).location = originalLocation
   })
 })

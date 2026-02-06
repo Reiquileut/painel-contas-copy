@@ -1,270 +1,389 @@
-# Deploy no EasyPanel - Copy Trade Dashboard
+# Deploy em Producao no EasyPanel - Copy Trade Dashboard
 
-## Requisitos
+## Objetivo
 
-- **Servidor Linux** (Ubuntu 22.04+ recomendado)
-- **Minimo 2GB RAM** (4GB recomendado)
-- **Portas 80 e 443** abertas no firewall
-- **Dominio** apontando para o IP do servidor (opcional, mas recomendado para SSL)
+Este documento deixa o deploy em EasyPanel **decision-complete** para o estado atual do sistema:
 
----
-
-## 1. Instalar EasyPanel no Servidor
-
-Conecte via SSH no servidor e execute:
-
-```bash
-# 1. Instalar Docker (se ainda nao tiver)
-curl -sSL https://get.docker.com | sh
-
-# 2. Instalar EasyPanel
-docker run --rm -it \
-  -v /etc/easypanel:/etc/easypanel \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  easypanel/easypanel setup
-```
-
-Apos a instalacao, acesse o painel em `http://SEU_IP:3000` e crie sua conta de admin.
+- API v2 com sessao por cookie HttpOnly + CSRF
+- Redis obrigatorio em producao (rate limit + estado de sessao)
+- Postgres para persistencia
+- Frontend React servido por Nginx
+- Hardening ativo (docs/openapi desativados em producao, CORS explicito, fail-fast de secrets)
 
 ---
 
-## 2. Configurar Dominio (Recomendado)
+## Arquitetura de servicos
 
-No seu provedor de DNS, crie os seguintes registros **A** apontando para o IP do servidor:
+### Servicos obrigatorios
+
+1. `copytrade-postgres` (PostgreSQL 15)
+2. `copytrade-redis` (Redis 7)
+3. `backend` (FastAPI em `backend/Dockerfile`)
+4. `frontend` (React + Nginx em `frontend/Dockerfile`)
+
+### Servicos adicionais recomendados
+
+1. Job de backup de banco (diario)
+2. Monitoramento de uptime (ex.: Uptime Kuma)
+3. Centralizacao de logs (ex.: Loki + Grafana, ELK, ou equivalente)
+
+---
+
+## Requisitos minimos
+
+- Servidor Linux com Docker (Ubuntu 22.04+ recomendado)
+- 2 vCPU / 4 GB RAM (minimo operacional)
+- Portas 80 e 443 liberadas
+- Dominio configurado (fortemente recomendado para cookies `Secure`)
+
+---
+
+## Topologia de dominio recomendada
+
+Use subdominios no mesmo dominio raiz (same-site):
+
+- Frontend: `https://copytrade.seudominio.com`
+- Backend: `https://api.copytrade.seudominio.com`
+
+Registros DNS tipo `A`:
 
 | Tipo | Nome | Valor |
 |------|------|-------|
 | A | `copytrade.seudominio.com` | IP do servidor |
 | A | `api.copytrade.seudominio.com` | IP do servidor |
 
-Aguarde a propagacao do DNS (pode levar ate 24h, geralmente minutos).
+---
+
+## 1. Criar projeto no EasyPanel
+
+1. Abra o painel EasyPanel.
+2. Clique em `New Project`.
+3. Nome sugerido: `copytrade`.
 
 ---
 
-## 3. Criar Projeto no EasyPanel
+## 2. Criar servico PostgreSQL (obrigatorio)
 
-1. No painel, clique em **"New Project"**
-2. Nome: `copytrade`
+1. `+ New Service` -> `Postgres`.
+2. Nome sugerido: `copytrade-postgres`.
+3. Versao: `15`.
+4. Defina usuario, senha e database (sugestao abaixo):
+   - User: `copytrade`
+   - Database: `copytrade`
 
----
+Connection string interna esperada (backend):
 
-## 4. Adicionar Servico: PostgreSQL
-
-1. Dentro do projeto, clique em **"+ New Service"** > **"Postgres"**
-2. Configure:
-   - **Version**: 15
-   - **Password**: defina uma senha forte
-3. Salve e anote as informacoes de conexao:
-   - Host interno: `copytrade-postgres` (nome do servico dentro do EasyPanel)
-   - Porta: `5432`
-   - Database: `postgres` (default)
-   - Username: `postgres` (default)
-
-A **connection string** interna sera algo como:
-```
-postgresql://postgres:SUA_SENHA@copytrade-postgres:5432/postgres
+```bash
+postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade
 ```
 
 ---
 
-## 5. Adicionar Servico: Backend (API)
+## 3. Criar servico Redis (obrigatorio em producao)
 
-1. Clique em **"+ New Service"** > **"App"**
-2. Nome: `backend`
-3. Em **Source**, selecione **GitHub** e conecte seu repositorio (veja secao abaixo sobre como configurar o GitHub)
-4. Configure o build:
-   - **Dockerfile path**: `backend/Dockerfile`
-   - **Build context**: `backend`
-5. Em **Domains**, adicione:
+1. `+ New Service` -> `Redis`.
+2. Nome sugerido: `copytrade-redis`.
+3. Versao: `7` (ou estavel equivalente).
+
+Connection string interna esperada:
+
+```bash
+redis://copytrade-redis:6379/0
+```
+
+Sem Redis acessivel o backend em `APP_ENV=production` **nao sobe**.
+
+---
+
+## 4. Criar servico Backend (FastAPI)
+
+1. `+ New Service` -> `App`.
+2. Nome: `backend`.
+3. Source: repositorio Git.
+4. Build:
+   - Dockerfile path: `backend/Dockerfile`
+   - Build context: `backend`
+5. Domain:
    - Dominio: `api.copytrade.seudominio.com`
-   - **Proxy port**: `8000`
-   - Ative **HTTPS** (Let's Encrypt automatico)
-6. Em **Environment**, adicione as variaveis:
+   - Proxy port: `8000`
+   - HTTPS: habilitado
 
-```
-DATABASE_URL=postgresql://postgres:SUA_SENHA@copytrade-postgres:5432/postgres
-JWT_SECRET_KEY=<gerar abaixo>
+### Variaveis de ambiente do backend (copiar e ajustar)
+
+```bash
+APP_ENV=production
+DATABASE_URL=postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade
+REDIS_URL=redis://copytrade-redis:6379/0
+
+JWT_SECRET_KEY=GERAR_VALOR_FORTE
 JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-ENCRYPTION_KEY=<gerar abaixo>
+ACCESS_TOKEN_EXPIRE_MINUTES=15
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+ENCRYPTION_KEY=GERAR_CHAVE_FERNET_VALIDA
+PASSWORD_REVEAL_TTL_SECONDS=30
+
 CORS_ORIGINS=https://copytrade.seudominio.com
+
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=<sua senha admin>
-ADMIN_EMAIL=seu@email.com
+ADMIN_PASSWORD=GERAR_SENHA_FORTE_MIN_12
+ADMIN_EMAIL=admin@seudominio.com
+
+# Opcional (controle de transicao v1)
+V1_DEPRECATION_START=2026-02-06T00:00:00+00:00
+V1_DEPRECATION_WINDOW_DAYS=14
 ```
 
-7. Clique em **Deploy**
+Notas importantes:
+
+- `APP_ENV=production` e obrigatorio para comportamento seguro de cookies.
+- `CORS_ORIGINS` nao pode ter `*` em producao.
+- `ADMIN_PASSWORD` com menos de 12 caracteres bloqueia startup.
+- `ENCRYPTION_KEY` precisa ser Fernet valida.
+- O container ja roda `alembic upgrade head` no startup.
 
 ---
 
-## 6. Adicionar Servico: Frontend
+## 5. Criar servico Frontend (React + Nginx)
 
-1. Clique em **"+ New Service"** > **"App"**
-2. Nome: `frontend`
-3. Em **Source**, selecione **GitHub** e conecte o mesmo repositorio
-4. Configure o build:
-   - **Dockerfile path**: `frontend/Dockerfile`
-   - **Build context**: `frontend`
-5. Em **Domains**, adicione:
+1. `+ New Service` -> `App`.
+2. Nome: `frontend`.
+3. Source: mesmo repositorio.
+4. Build:
+   - Dockerfile path: `frontend/Dockerfile`
+   - Build context: `frontend`
+5. Domain:
    - Dominio: `copytrade.seudominio.com`
-   - **Proxy port**: `80`
-   - Ative **HTTPS**
-6. Em **Environment**, adicione:
+   - Proxy port: `80`
+   - HTTPS: habilitado
+6. Environment:
 
-```
+```bash
 VITE_API_URL=https://api.copytrade.seudominio.com
 ```
 
-7. Clique em **Deploy**
+O frontend usa runtime config (`/env-config.js`), entao mudar `VITE_API_URL` nao exige rebuild da imagem.
 
 ---
 
-## 7. Gerar Chaves Seguras
+## 6. Gerar secrets com seguranca
 
-Execute estes comandos no seu terminal para gerar as chaves:
+JWT secret:
 
-**JWT Secret Key:**
 ```bash
-openssl rand -base64 32
+openssl rand -base64 48
 ```
 
-**Encryption Key (Fernet):**
+Fernet key:
+
 ```bash
 python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Se nao tiver Python com cryptography instalado:
-```bash
-pip3 install cryptography && python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-**Senha Admin (aleatoria):**
-```bash
-openssl rand -base64 16
-```
-
----
-
-## 8. Configurar GitHub no EasyPanel
-
-O EasyPanel usa **Personal Access Token** para integrar com GitHub (tambem suporta GitLab, Bitbucket e Gitea).
-
-1. No GitHub, va em **Settings** > **Developer settings** > **Personal access tokens**
-2. Crie um token (Classic ou Fine-grained) com as permissoes:
-   - `repo` - acesso a repositorios privados
-   - `admin:repo_hook` - para auto-deploy via webhook
-3. No EasyPanel, va em **Settings** > **Github** e cole o token
-4. Agora voce pode selecionar seus repositorios ao configurar o Source dos servicos
-
----
-
-## 9. Verificacao
-
-Apos o deploy, verifique:
-
-1. **Health check da API**: acesse `https://api.copytrade.seudominio.com/api/health`
-   - Deve retornar `{"status": "ok"}`
-2. **Frontend**: acesse `https://copytrade.seudominio.com`
-   - O dashboard deve carregar normalmente
-3. **Login admin**: acesse `https://copytrade.seudominio.com/login`
-   - Use as credenciais configuradas em `ADMIN_USERNAME` e `ADMIN_PASSWORD`
-4. **API Docs**: acesse `https://api.copytrade.seudominio.com/docs`
-   - Swagger UI deve estar disponivel
-
----
-
-## Como Funciona o VITE_API_URL (Runtime Config)
-
-O frontend usa um mecanismo de **runtime config** para que a URL da API possa ser alterada sem rebuild:
-
-1. O `docker-entrypoint.sh` roda antes do nginx e gera o arquivo `/usr/share/nginx/html/env-config.js` com o valor da env var `VITE_API_URL`
-2. O `index.html` carrega esse script antes do app React
-3. O `client.ts` usa `window.__ENV__.VITE_API_URL` com fallback para o valor de build time
-
-Isso significa que basta alterar a env var `VITE_API_URL` no EasyPanel e re-deploy (sem rebuild) para mudar o endpoint da API.
-
----
-
-## Portas Dinamicas (docker-compose local)
-
-Para desenvolvimento local com `docker-compose`, todas as portas sao configuraveis via `.env`:
-
-| Variavel | Default | Descricao |
-|----------|---------|-----------|
-| `DB_PORT` | 5432 | Porta exposta do PostgreSQL |
-| `BACKEND_PORT` | 8000 | Porta exposta do backend |
-| `FRONTEND_PORT` | 3000 | Porta exposta do frontend |
-
-Se alguma porta estiver em uso, altere no `.env`:
-```
-DB_PORT=5433
-BACKEND_PORT=8001
-FRONTEND_PORT=3001
-```
-
-> **Nota:** No EasyPanel as portas internas nao conflitam, pois cada servico roda em container isolado. A configuracao de "Proxy port" no EasyPanel e o que mapeia o dominio para a porta interna do container.
-
----
-
-## Troubleshooting
-
-### Frontend nao conecta na API
-- Verifique se `VITE_API_URL` no servico frontend aponta para o dominio correto da API (com `https://`)
-- Verifique se `CORS_ORIGINS` no backend inclui o dominio do frontend (com `https://`)
-- No DevTools do browser (F12 > Network), verifique para onde as requests estao indo
-
-### Erro de banco de dados
-- Verifique se a `DATABASE_URL` no backend usa o hostname interno correto do servico Postgres no EasyPanel
-- O formato e: `postgresql://postgres:SENHA@NOME_DO_SERVICO_POSTGRES:5432/postgres`
-- Verifique nos logs do backend se as migrations rodaram com sucesso
-
-### Erro 502 Bad Gateway
-- O servico pode estar iniciando. Aguarde 30-60 segundos
-- Verifique se a **Proxy port** esta configurada corretamente (8000 para backend, 80 para frontend)
-- Verifique os logs do servico no EasyPanel
-
-### Admin nao consegue logar
-- Verifique se `ADMIN_USERNAME` e `ADMIN_PASSWORD` estao configurados nas env vars do backend
-- O admin e criado apenas no primeiro startup. Se mudar a senha na env var, precisa alterar diretamente no banco ou recriar o banco
-
-### Frontend aponta para API antiga apos mudanca de VITE_API_URL
-- Limpe o cache do browser (Ctrl+Shift+R / hard refresh)
-- Verifique se `https://copytrade.seudominio.com/env-config.js` retorna a URL correta
-- O nginx esta configurado para nao cachear env-config.js, mas CDNs ou proxies intermediarios podem cachear
-
-### SSL nao funciona
-- Verifique se o dominio esta apontando para o IP do servidor (use `dig seudominio.com`)
-- Verifique se as portas 80 e 443 estao abertas no firewall do servidor
-- No EasyPanel, verifique se HTTPS esta ativado para o dominio
-
----
-
-## Atualizando o Sistema
-
-Para atualizar apos mudancas no codigo:
-
-1. Faca push das mudancas para o GitHub
-2. No EasyPanel, va ate o servico que deseja atualizar
-3. Clique em **"Deploy"** (ou ative auto-deploy para deploys automaticos no push)
-
-Os dois servicos (backend e frontend) precisam ser deployados separadamente se ambos mudaram.
-
----
-
-## Backup do Banco de Dados
-
-Para fazer backup do PostgreSQL via EasyPanel:
+Senha admin:
 
 ```bash
-# Conecte no servidor via SSH
-# Descubra o nome do container Postgres
-docker ps | grep postgres
-
-# Faca o dump
-docker exec NOME_DO_CONTAINER pg_dump -U postgres postgres > backup_$(date +%Y%m%d).sql
+openssl rand -base64 24
 ```
 
-Para restaurar:
+---
+
+## 7. Integracao GitHub no EasyPanel
+
+1. Gere um Personal Access Token no GitHub.
+2. Permissoes recomendadas:
+   - `repo`
+   - `admin:repo_hook` (se usar webhook para auto-deploy)
+3. EasyPanel -> `Settings` -> `Github` -> cole o token.
+
+---
+
+## 8. Ordem de deploy recomendada
+
+1. Deploy `copytrade-postgres`
+2. Deploy `copytrade-redis`
+3. Deploy `backend`
+4. Deploy `frontend`
+
+---
+
+## 9. Checklist de validacao pos-deploy
+
+1. Health da API:
+
 ```bash
-docker exec -i NOME_DO_CONTAINER psql -U postgres postgres < backup_20240101.sql
+curl -i https://api.copytrade.seudominio.com/api/health
+```
+
+Esperado: HTTP `200` e payload com `status: healthy`.
+
+2. Docs bloqueadas em producao:
+
+```bash
+curl -I https://api.copytrade.seudominio.com/docs
+curl -I https://api.copytrade.seudominio.com/openapi.json
+```
+
+Esperado: `404` (ou endpoint indisponivel).
+
+3. Frontend acessivel:
+
+```bash
+curl -I https://copytrade.seudominio.com
+```
+
+Esperado: `200`.
+
+4. Login v2 define cookies de sessao:
+   - `ct_access` (HttpOnly, SameSite=Lax)
+   - `ct_refresh` (HttpOnly, SameSite=Strict)
+   - `ct_csrf` (leitura cliente para header CSRF)
+
+5. Operacoes mutaveis com CSRF:
+   - Sem header `X-CSRF-Token` deve falhar com `403`.
+
+---
+
+## 10. Servicos adicionais (podem/devem subir junto)
+
+### A) Backup diario de Postgres (recomendado forte)
+
+Opcao simples:
+
+1. Criar um servico adicional de job/cron.
+2. Rodar `pg_dump` diario.
+3. Enviar dump para armazenamento externo (S3, bucket compatvel, ou storage remoto).
+
+Exemplo de comando:
+
+```bash
+pg_dump "postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade" > /backup/copytrade_$(date +%Y%m%d_%H%M).sql
+```
+
+### B) Monitoramento de uptime (recomendado)
+
+Suba um servico de monitoramento apontando para:
+
+- `https://copytrade.seudominio.com`
+- `https://api.copytrade.seudominio.com/api/health`
+
+### C) Centralizacao de logs (opcional, recomendado em escala)
+
+Se houver mais de um ambiente/instancia, adicione stack de logs centralizados para investigacao de incidentes.
+
+---
+
+## 11. Troubleshooting rapido
+
+### Backend nao sobe
+
+- Verifique logs de startup.
+- Causas comuns em producao:
+  - `REDIS_URL` ausente/inacessivel
+  - `JWT_SECRET_KEY` muito curta
+  - `ENCRYPTION_KEY` invalida
+  - `ADMIN_PASSWORD` fraca
+
+### Frontend nao autentica
+
+- Verifique `VITE_API_URL` correto no frontend.
+- Verifique `CORS_ORIGINS` no backend com o dominio exato do frontend.
+- Confirme HTTPS ativo nos dois dominios.
+- Confira cookies de sessao no browser.
+
+### Erro CSRF (`403`)
+
+- Header `X-CSRF-Token` ausente ou diferente do cookie `ct_csrf`.
+- Refaça login para renovar sessao/cookies.
+
+### Erro de conexao com banco
+
+- Confirme `DATABASE_URL` com hostname interno correto do servico Postgres.
+- Verifique se as migrations executaram no startup do backend.
+
+### Erro 502 no dominio da API
+
+- Backend ainda iniciando ou com crash.
+- Verifique `Proxy port` = `8000`.
+
+---
+
+## 12. Atualizacao e rollback
+
+### Atualizar
+
+1. Push no repositorio.
+2. Deploy de `backend`.
+3. Deploy de `frontend` (se houve mudanca no frontend).
+
+### Rollback
+
+1. Re-deploy do ultimo commit/tag estavel no EasyPanel.
+2. Se houver migracao irreversivel, restaurar backup do banco.
+
+---
+
+## 13. Observacoes de seguranca
+
+- Nao exponha porta de Postgres/Redis para internet publica.
+- Restrinja acesso administrativo do EasyPanel.
+- Rotacione `JWT_SECRET_KEY`, `ENCRYPTION_KEY` e senhas periodicamente.
+- Mantenha backups testados (restore validado).
+
+---
+
+## 14. Deploy local (desenvolvimento)
+
+Esta opcao sobe todo o ambiente local com Docker Compose, sem EasyPanel.
+
+### Pre-requisitos
+
+- Docker Desktop (ou Docker Engine + Compose) ativo
+- Arquivo `.env` preenchido (pode copiar de `.env.example`)
+
+### Passo a passo
+
+1. Na raiz do projeto, subir/recriar com build:
+
+```bash
+docker compose up -d --build
+```
+
+2. Verificar status:
+
+```bash
+docker compose ps
+```
+
+3. Verificar health da API:
+
+```bash
+curl -i http://localhost:8000/api/health
+```
+
+4. Acessar localmente:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+- Health: `http://localhost:8000/api/health`
+
+### Logs uteis
+
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
+docker compose logs -f redis
+```
+
+### Parar ambiente
+
+```bash
+docker compose down
+```
+
+### Limpeza completa (inclui volumes)
+
+```bash
+docker compose down -v
 ```

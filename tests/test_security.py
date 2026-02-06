@@ -54,8 +54,7 @@ def test_get_fernet_cipher_without_key_raises(monkeypatch):
         security.get_fernet_cipher()
 
 
-def test_get_fernet_cipher_derives_key_when_invalid(monkeypatch):
+def test_get_fernet_cipher_invalid_key_raises(monkeypatch):
     monkeypatch.setattr(security.settings, "encryption_key", "invalid-short-key")
-    encrypted = security.encrypt_account_password("derived-pass")
-
-    assert security.decrypt_account_password(encrypted) == "derived-pass"
+    with pytest.raises(ValueError, match="valid Fernet key"):
+        security.get_fernet_cipher()

@@ -104,7 +104,7 @@ def test_admin_accounts_full_flow_with_errors(client, db_session):
         )
         assert update_ok.status_code == 200
         assert update_ok.json()["buyer_name"] == "Buyer Updated"
-        assert update_ok.json()["account_password"] == "new-pass"
+        assert update_ok.json()["account_password"] == "********"
 
         update_missing = client.put(
             "/api/admin/accounts/9999",

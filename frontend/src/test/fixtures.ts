@@ -28,7 +28,6 @@ export const mockAdminStats: AdminStats = {
 export const mockAccount: Account = {
   id: 1,
   account_number: 'ACC-1',
-  account_password: 'secret',
   server: 'MT5',
   buyer_name: 'Buyer',
   buyer_email: 'buyer@example.com',

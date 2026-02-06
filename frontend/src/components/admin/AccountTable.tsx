@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Edit, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
+import { Edit, Trash2, Copy, KeyRound, ShieldCheck } from 'lucide-react'
 import { format } from 'date-fns'
 import type { Account, AccountStatus, PhaseStatus } from '../../types/account'
 
@@ -8,19 +8,60 @@ interface AccountTableProps {
   onEdit: (account: Account) => void
   onDelete: (id: number) => void
   onStatusChange: (id: number, status: AccountStatus) => void
+  onRevealPassword: (id: number, adminPassword: string) => Promise<{
+    account_password: string
+    expires_in_seconds: number
+  }>
+  onRotatePassword: (id: number, newPassword: string) => Promise<void>
 }
 
-export function AccountTable({ accounts, onEdit, onDelete, onStatusChange }: AccountTableProps) {
-  const [visiblePasswords, setVisiblePasswords] = useState<Set<number>>(new Set())
+export function AccountTable({
+  accounts,
+  onEdit,
+  onDelete,
+  onStatusChange,
+  onRevealPassword,
+  onRotatePassword,
+}: AccountTableProps) {
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<number, string>>({})
 
-  const togglePassword = (id: number) => {
-    const newSet = new Set(visiblePasswords)
-    if (newSet.has(id)) {
-      newSet.delete(id)
-    } else {
-      newSet.add(id)
+  const handleRevealPassword = async (id: number) => {
+    const adminPassword = prompt('Digite sua senha de admin para revelar a senha da conta:')
+    if (!adminPassword) return
+    try {
+      const response = await onRevealPassword(id, adminPassword)
+      setRevealedPasswords((prev) => ({ ...prev, [id]: response.account_password }))
+      window.setTimeout(() => {
+        setRevealedPasswords((prev) => {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+      }, response.expires_in_seconds * 1000)
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || error?.message || 'Nao foi possivel revelar a senha'
+      alert(message)
     }
-    setVisiblePasswords(newSet)
+  }
+
+  const handleRotatePassword = async (id: number) => {
+    const newPassword = prompt('Digite a nova senha da conta (minimo 8 caracteres):')
+    if (!newPassword) return
+    if (newPassword.length < 8) {
+      alert('A nova senha precisa ter pelo menos 8 caracteres.')
+      return
+    }
+    try {
+      await onRotatePassword(id, newPassword)
+      setRevealedPasswords((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || error?.message || 'Nao foi possivel rotacionar a senha'
+      alert(message)
+    }
   }
 
   const copyToClipboard = (text: string) => {
@@ -66,9 +107,6 @@ export function AccountTable({ accounts, onEdit, onDelete, onStatusChange }: Acc
               Conta
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-              Senha
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
               Servidor
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -109,33 +147,19 @@ export function AccountTable({ accounts, onEdit, onDelete, onStatusChange }: Acc
                 </div>
               </td>
               <td className="px-4 py-4 whitespace-nowrap">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">
-                    {visiblePasswords.has(account.id)
-                      ? account.account_password
-                      : '••••••••'}
-                  </span>
-                  <button
-                    onClick={() => togglePassword(account.id)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    {visiblePasswords.has(account.id) ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => copyToClipboard(account.account_password)}
-                    className="text-gray-400 hover:text-gray-600"
-                    title="Copiar"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </button>
-                </div>
-              </td>
-              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
                 {account.server}
+                {revealedPasswords[account.id] && (
+                  <div className="mt-1 flex items-center gap-2 text-xs text-amber-700">
+                    <span className="font-mono">{revealedPasswords[account.id]}</span>
+                    <button
+                      onClick={() => copyToClipboard(revealedPasswords[account.id])}
+                      className="text-amber-600 hover:text-amber-800"
+                      title="Copiar senha revelada"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
               </td>
               <td className="px-4 py-4">
                 <div className="text-sm">
@@ -203,6 +227,20 @@ export function AccountTable({ accounts, onEdit, onDelete, onStatusChange }: Acc
                     title="Editar"
                   >
                     <Edit className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => handleRevealPassword(account.id)}
+                    className="text-amber-600 hover:text-amber-800"
+                    title="Revelar Senha"
+                  >
+                    <ShieldCheck className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => handleRotatePassword(account.id)}
+                    className="text-emerald-600 hover:text-emerald-800"
+                    title="Rotacionar Senha"
+                  >
+                    <KeyRound className="h-5 w-5" />
                   </button>
                   <button
                     onClick={() => {

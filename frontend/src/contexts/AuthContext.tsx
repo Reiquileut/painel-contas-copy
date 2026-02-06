@@ -19,31 +19,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      authApi.getCurrentUser()
-        .then(setUser)
-        .catch(() => {
-          localStorage.removeItem('token')
-        })
-        .finally(() => setIsLoading(false))
-    } else {
-      setIsLoading(false)
+    let isMounted = true
+    async function bootstrapSession() {
+      try {
+        await authApi.refresh()
+      } catch {
+        // Ignore refresh errors at bootstrap; /me below confirms auth state.
+      }
+
+      try {
+        const currentUser = await authApi.getCurrentUser()
+        if (isMounted) setUser(currentUser)
+      } catch {
+        if (isMounted) setUser(null)
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
+    }
+
+    void bootstrapSession()
+    return () => {
+      isMounted = false
     }
   }, [])
 
+  useEffect(() => {
+    if (!user) return
+    const refreshInterval = window.setInterval(() => {
+      authApi.refresh().catch(() => {
+        setUser(null)
+        navigate('/login')
+      })
+    }, 10 * 60 * 1000)
+    return () => window.clearInterval(refreshInterval)
+  }, [user, navigate])
+
   const login = async (credentials: LoginCredentials) => {
-    const { access_token } = await authApi.login(credentials)
-    localStorage.setItem('token', access_token)
-    const userData = await authApi.getCurrentUser()
-    setUser(userData)
+    const session = await authApi.login(credentials)
+    setUser(session.user)
     navigate('/admin')
   }
 
   const logout = () => {
-    localStorage.removeItem('token')
-    setUser(null)
-    navigate('/login')
+    void authApi.logout().finally(() => {
+      setUser(null)
+      navigate('/login')
+    })
   }
 
   return (

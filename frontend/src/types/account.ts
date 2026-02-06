@@ -4,7 +4,6 @@ export type PhaseStatus = 'not_started' | 'in_progress' | 'passed' | 'failed'
 export interface Account {
   id: number
   account_number: string
-  account_password: string
   server: string
   buyer_name: string
   buyer_email: string | null
@@ -46,8 +45,14 @@ export interface AccountCreate {
   phase2_status?: PhaseStatus
 }
 
-export interface AccountUpdate extends Partial<AccountCreate> {
+export interface AccountUpdate extends Partial<Omit<AccountCreate, 'account_password'>> {
   copy_count?: number
+}
+
+export interface PasswordRevealResponse {
+  account_password: string
+  revealed_at: string
+  expires_in_seconds: number
 }
 
 export interface Stats {
