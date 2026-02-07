@@ -11,6 +11,15 @@ Este documento deixa o deploy em EasyPanel **decision-complete** para o estado a
 - Hardening ativo (docs/openapi desativados em producao, CORS explicito, fail-fast de secrets)
 - Dependencias de auth/hardening atualizadas (FastAPI `0.128.2`, Starlette `0.49.3`, PyJWT `2.11.0`)
 
+### Licoes aprendidas nesta implantacao
+
+- O frontend pode estar 100% OK e ainda assim falhar em dados se `GET /api/public/stats` retornar `500`.
+- `GET /api/health` pode retornar `200` mesmo com credencial de Postgres errada (endpoint nao consulta banco).
+- Em EasyPanel, `404 Not Found` com tela padrao no dominio da API normalmente indica dominio/proxy mapeado errado.
+- Em `Source = Github`, o campo `Caminho de Build` aceita **pasta**, nao arquivo (`backend/Dockerfile` ali gera `Invalid`).
+- `VITE_API_URL` vazio em `/env-config.js` quebra o frontend mesmo com build correto.
+- Senha de banco com caracteres especiais pode complicar URL (`@`, `%`) e causar erro de interpolation no Alembic.
+
 ---
 
 ## Arquitetura de servicos
@@ -70,12 +79,21 @@ Registros DNS tipo `A`:
 3. Versao: `15`.
 4. Defina usuario, senha e database (sugestao abaixo):
    - User: `copytrade`
-   - Database: `copytrade`
+   - Database: `copytrade-postgres`
 
 Connection string interna esperada (backend):
 
 ```bash
-postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade
+postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade-postgres
+```
+
+Valide os dados reais do Postgres (nao assuma nomes):
+
+```bash
+echo "POSTGRES_USER=$POSTGRES_USER"
+echo "POSTGRES_DB=$POSTGRES_DB"
+echo "POSTGRES_PORT=${POSTGRES_PORT:-5432}"
+psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select current_user, current_database();"
 ```
 
 ---
@@ -101,9 +119,12 @@ Sem Redis acessivel o backend em `APP_ENV=production` **nao sobe**.
 1. `+ New Service` -> `App`.
 2. Nome: `backend`.
 3. Source: repositorio Git.
-4. Build:
-   - Dockerfile path: `backend/Dockerfile`
-   - Build context: `backend`
+4. Build (muito importante):
+   - Se a tela tiver apenas `Caminho de Build`, informe **somente** a pasta: `backend`.
+   - Se a tela tiver `Dockerfile path` e `Build context`, use:
+     - Dockerfile path: `backend/Dockerfile`
+     - Build context: `backend`
+   - Em `Source = Github`, nao coloque `backend/Dockerfile` no campo de caminho de build (gera `Invalid`).
 5. Domain:
    - Dominio: `api.copytrade.seudominio.com`
    - Proxy port: `8000`
@@ -113,8 +134,8 @@ Sem Redis acessivel o backend em `APP_ENV=production` **nao sobe**.
 
 ```bash
 APP_ENV=production
-DATABASE_URL=postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade
-REDIS_URL=redis://copytrade-redis:6379/0
+DATABASE_URL=postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade-postgres
+REDIS_URL=redis://:SENHA_REDIS@copytrade-redis:6379/0
 TRUST_X_FORWARDED_FOR=true
 
 JWT_SECRET_KEY=GERAR_VALOR_FORTE
@@ -144,6 +165,15 @@ Notas importantes:
 - `ADMIN_PASSWORD` com menos de 12 caracteres bloqueia startup.
 - `ENCRYPTION_KEY` precisa ser Fernet valida.
 - O container ja roda `alembic upgrade head` no startup.
+- `DATABASE_URL` deve usar **os valores reais** do servico Postgres (`POSTGRES_USER` e `POSTGRES_DB`).
+- Se Redis nao tiver senha, use `REDIS_URL=redis://copytrade-redis:6379/0`.
+- Evite caracteres especiais na senha do Postgres (ex.: `@`, `%`, `:`) para reduzir erro de parsing de URL em startup/migrations.
+
+Comando para gerar `ENCRYPTION_KEY` valida:
+
+```bash
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
 ---
 
@@ -166,6 +196,30 @@ VITE_API_URL=https://api.copytrade.seudominio.com
 ```
 
 O frontend usa runtime config (`/env-config.js`), entao mudar `VITE_API_URL` nao exige rebuild da imagem.
+
+Importante:
+
+- Configure `VITE_API_URL` no servico `frontend` (aba `Ambiente` do frontend).
+- Nao coloque `VITE_API_URL` no servico `backend`.
+- O valor deve ser o dominio publico da API (com `https`).
+
+Bloco pronto para copiar no `frontend`:
+
+```bash
+VITE_API_URL=https://api.copytrade.seudominio.com
+```
+
+Validacao obrigatoria apos implantar frontend:
+
+```bash
+curl -s https://copytrade.seudominio.com/env-config.js
+```
+
+Esperado conter:
+
+```txt
+VITE_API_URL: "https://api.copytrade.seudominio.com"
+```
 
 ---
 
@@ -207,6 +261,7 @@ openssl rand -base64 24
 2. Deploy `copytrade-redis`
 3. Deploy `backend`
 4. Deploy `frontend`
+5. Revalidar frontend apos backend responder `/api/public/stats`
 
 ### Processo operacional recomendado (release)
 
@@ -221,7 +276,14 @@ python3 -m bandit -q -r backend/app
 ```
 
 2. Fazer deploy na ordem acima.
-3. Executar checklist de validacao pos-deploy.
+3. Antes do frontend, validar backend:
+
+```bash
+curl -i https://api.copytrade.seudominio.com/api/health
+curl -i https://api.copytrade.seudominio.com/api/public/stats
+```
+
+4. Executar checklist de validacao pos-deploy.
 
 ---
 
@@ -235,7 +297,16 @@ curl -i https://api.copytrade.seudominio.com/api/health
 
 Esperado: HTTP `200` e payload com `status: healthy`.
 
-2. Docs bloqueadas em producao:
+2. Stats publicas da API (consulta banco):
+
+```bash
+curl -i https://api.copytrade.seudominio.com/api/public/stats
+```
+
+Esperado: HTTP `200`.
+Se retornar `500`, verifique `DATABASE_URL`/senha do Postgres no backend.
+
+3. Docs bloqueadas em producao:
 
 ```bash
 curl -I https://api.copytrade.seudominio.com/docs
@@ -244,7 +315,7 @@ curl -I https://api.copytrade.seudominio.com/openapi.json
 
 Esperado: `404` (ou endpoint indisponivel).
 
-3. Frontend acessivel:
+4. Frontend acessivel:
 
 ```bash
 curl -I https://copytrade.seudominio.com
@@ -252,15 +323,24 @@ curl -I https://copytrade.seudominio.com
 
 Esperado: `200`.
 
-4. Login v2 define cookies de sessao:
+5. Runtime config do frontend:
+
+```bash
+curl -s https://copytrade.seudominio.com/env-config.js
+```
+
+Esperado conter `VITE_API_URL` com o dominio da API.
+Se vier vazio (`""`), ajustar variavel de ambiente no servico `frontend` e implantar novamente.
+
+6. Login v2 define cookies de sessao:
    - `ct_access` (HttpOnly, SameSite=Lax)
    - `ct_refresh` (HttpOnly, SameSite=Strict)
    - `ct_csrf` (leitura cliente para header CSRF)
 
-5. Operacoes mutaveis com CSRF:
+7. Operacoes mutaveis com CSRF:
    - Sem header `X-CSRF-Token` deve falhar com `403`.
 
-6. Headers de seguranca da API:
+8. Headers de seguranca da API:
 
 ```bash
 curl -I https://api.copytrade.seudominio.com/api/health
@@ -288,7 +368,7 @@ Opcao simples:
 Exemplo de comando:
 
 ```bash
-pg_dump "postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade" > /backup/copytrade_$(date +%Y%m%d_%H%M).sql
+pg_dump "postgresql://copytrade:SENHA_FORTE@copytrade-postgres:5432/copytrade-postgres" > /backup/copytrade_$(date +%Y%m%d_%H%M).sql
 ```
 
 ### B) Monitoramento de uptime (recomendado)
@@ -315,12 +395,14 @@ Se houver mais de um ambiente/instancia, adicione stack de logs centralizados pa
   - `ENCRYPTION_KEY` invalida
   - `ADMIN_PASSWORD` fraca
 
-### Frontend nao autentica
+### Frontend carrega, mas mostra "Erro ao carregar estatisticas"
 
-- Verifique `VITE_API_URL` correto no frontend.
-- Verifique `CORS_ORIGINS` no backend com o dominio exato do frontend.
-- Confirme HTTPS ativo nos dois dominios.
-- Confira cookies de sessao no browser.
+- Verifique no navegador:
+  - `https://copytrade.seudominio.com/env-config.js`
+  - `https://api.copytrade.seudominio.com/api/health`
+  - `https://api.copytrade.seudominio.com/api/public/stats`
+- Se `health=200` e `stats=500`, o problema e banco (`DATABASE_URL`/senha).
+- Se `env-config.js` vier com `VITE_API_URL: ""`, variavel do frontend nao foi aplicada.
 
 ### Erro CSRF (`403`)
 
@@ -329,13 +411,68 @@ Se houver mais de um ambiente/instancia, adicione stack de logs centralizados pa
 
 ### Erro de conexao com banco
 
-- Confirme `DATABASE_URL` com hostname interno correto do servico Postgres.
-- Verifique se as migrations executaram no startup do backend.
+- Sintoma comum nos logs:
 
-### Erro 502 no dominio da API
+```txt
+password authentication failed for user "copytrade"
+```
 
-- Backend ainda iniciando ou com crash.
-- Verifique `Proxy port` = `8000`.
+- Outro sintoma relacionado:
+
+```txt
+Error creating admin user: (psycopg2.OperationalError) ...
+```
+
+- A API pode subir mesmo com esse erro, mas endpoints que consultam banco (ex.: `/api/public/stats`) retornam `500`.
+
+- Confirme `DATABASE_URL` com hostname interno correto do servico Postgres e banco real.
+- Alinhe senha do usuario no Postgres e no `DATABASE_URL`.
+
+Comandos uteis no container do Postgres:
+
+```bash
+echo "POSTGRES_USER=$POSTGRES_USER"
+echo "POSTGRES_DB=$POSTGRES_DB"
+psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select current_user, current_database();"
+```
+
+Reset de senha (exemplo):
+
+```bash
+psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER USER copytrade WITH PASSWORD 'Copytrade2026Safe';"
+```
+
+Depois ajuste no backend:
+
+```bash
+DATABASE_URL=postgresql://copytrade:Copytrade2026Safe@copytrade-postgres:5432/copytrade-postgres
+```
+
+### Erro Alembic `invalid interpolation syntax`
+
+- Sintoma comum:
+
+```txt
+ValueError: invalid interpolation syntax in 'postgresql://...%40...'
+```
+
+- Causa: `DATABASE_URL` com `%` (ex.: senha URL-encoded com `%40`) passada para o parser do Alembic.
+- Solucao recomendada: usar senha sem caracteres especiais no Postgres.
+- Alternativa tecnica: escapar `%` como `%%` apenas se realmente precisar manter a senha atual.
+
+### Dominio da API retorna tela 404 do EasyPanel
+
+- Isso indica roteamento de dominio/proxy no painel, nao bug da API.
+- Verifique no servico `backend`:
+  - Dominio: `api.copytrade.seudominio.com`
+  - `Proxy port`: `8000`
+  - HTTPS habilitado
+- Garanta que o mesmo dominio nao esta anexado ao `frontend`.
+
+### Requests para `/.env` ou `/.env.*` nos logs
+
+- Isso costuma ser scanner automatizado da internet.
+- Se estiver retornando `404`, o comportamento esta correto.
 
 ---
 
@@ -351,6 +488,7 @@ Se houver mais de um ambiente/instancia, adicione stack de logs centralizados pa
 
 ```bash
 curl -i https://api.copytrade.seudominio.com/api/health
+curl -i https://api.copytrade.seudominio.com/api/public/stats
 curl -I https://copytrade.seudominio.com
 ```
 
