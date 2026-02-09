@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     session_cookie_name_refresh: str = "ct_refresh"
     session_cookie_name_csrf: str = "ct_csrf"
     csrf_header_name: str = "X-CSRF-Token"
+    cookie_domain: str = ""
     password_reveal_ttl_seconds: int = 30
 
     # CORS

@@ -31,17 +31,38 @@ client.interceptors.request.use((config) => {
   return config
 })
 
+let refreshPromise: Promise<void> | null = null
+
+function doRefresh(): Promise<void> {
+  if (refreshPromise) return refreshPromise
+  refreshPromise = client
+    .post('/api/v2/auth/refresh')
+    .then(() => {})
+    .finally(() => {
+      refreshPromise = null
+    })
+  return refreshPromise
+}
+
 client.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status
-    const requestUrl = String(error?.config?.url || '')
+    const config = error.config
+    const requestUrl = String(config?.url || '')
     const isAuthEndpoint = requestUrl.includes('/api/v2/auth/')
     const currentPath = window.location?.pathname || ''
     const isLoginPath = currentPath === '/login' || currentPath.startsWith('/login/')
 
-    if (status === 401 && !isAuthEndpoint && !isLoginPath) {
-      window.location.href = '/login'
+    if (status === 401 && !isAuthEndpoint && !isLoginPath && !config._retry) {
+      config._retry = true
+      try {
+        await doRefresh()
+        return client(config)
+      } catch {
+        window.location.href = '/login'
+        return Promise.reject(error)
+      }
     }
     return Promise.reject(error)
   }

@@ -19,14 +19,16 @@ settings = get_settings()
 
 
 def _set_session_cookies(response: Response, *, access_token: str, refresh_token: str, csrf_token: str) -> None:
+    domain = settings.cookie_domain or None
     response.set_cookie(
         key=settings.session_cookie_name_access,
         value=access_token,
         max_age=settings.access_token_expire_minutes * 60,
         httponly=True,
         secure=settings.cookie_secure,
-        samesite="lax",
-        path="/"
+        samesite="none",
+        path="/",
+        domain=domain,
     )
     response.set_cookie(
         key=settings.session_cookie_name_refresh,
@@ -34,8 +36,9 @@ def _set_session_cookies(response: Response, *, access_token: str, refresh_token
         max_age=settings.refresh_token_expire_days * 24 * 3600,
         httponly=True,
         secure=settings.cookie_secure,
-        samesite="strict",
-        path="/api/v2/auth"
+        samesite="none",
+        path="/",
+        domain=domain,
     )
     response.set_cookie(
         key=settings.session_cookie_name_csrf,
@@ -43,15 +46,17 @@ def _set_session_cookies(response: Response, *, access_token: str, refresh_token
         max_age=settings.refresh_token_expire_days * 24 * 3600,
         httponly=False,
         secure=settings.cookie_secure,
-        samesite="strict",
-        path="/"
+        samesite="none",
+        path="/",
+        domain=domain,
     )
 
 
 def _clear_session_cookies(response: Response) -> None:
-    response.delete_cookie(key=settings.session_cookie_name_access, path="/")
-    response.delete_cookie(key=settings.session_cookie_name_refresh, path="/api/v2/auth")
-    response.delete_cookie(key=settings.session_cookie_name_csrf, path="/")
+    domain = settings.cookie_domain or None
+    response.delete_cookie(key=settings.session_cookie_name_access, path="/", domain=domain)
+    response.delete_cookie(key=settings.session_cookie_name_refresh, path="/", domain=domain)
+    response.delete_cookie(key=settings.session_cookie_name_csrf, path="/", domain=domain)
 
 
 def _set_no_store_headers(response: Response) -> None:
